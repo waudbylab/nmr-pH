@@ -1,3 +1,5 @@
+import { calculateWaterReference } from './ReferencingPanel';
+
 /**
  * HeadlineResult component.
  * Displays the main pH result prominently with option to view full results.
@@ -5,7 +7,9 @@
 export function HeadlineResult({
   result,
   calculating,
-  onScrollToResults
+  onScrollToResults,
+  usingAssumedWaterRef = false,
+  temperature = 298.15
 }) {
   if (calculating) {
     return (
@@ -31,9 +35,10 @@ export function HeadlineResult({
 
   const pH = result.parameters.pH.value;
   const uncertainty = result.parameters.pH.uncertainty;
+  const waterRef = calculateWaterReference(temperature);
 
   return (
-    <div className="headline-result success">
+    <div className={`headline-result ${usingAssumedWaterRef ? 'warning' : 'success'}`}>
       <div className="headline-ph">
         <span className="headline-label">Fitted pH</span>
         <span className="headline-value">
@@ -44,6 +49,11 @@ export function HeadlineResult({
             </span>
           )}
         </span>
+        {usingAssumedWaterRef && (
+          <span className="headline-warning">
+            Using assumed water reference ({waterRef.toFixed(3)} ppm at {temperature.toFixed(1)} K)
+          </span>
+        )}
       </div>
       <button
         type="button"

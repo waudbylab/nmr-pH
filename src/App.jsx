@@ -98,19 +98,43 @@ function AppContent() {
     );
   }, [nuclei, hasDSS, dssShift, heteroReferencedToDSS, spectrometerFreqs, temperature, observedShifts]);
 
-  // Validate degrees of freedom
+  // Create a modified config that uses fixed water reference when DOF is insufficient
+  // Also track whether we're using assumed water referencing
+  const { effectiveReferencingConfig, usingAssumedWaterRef } = useMemo(() => {
+    if (!referencingConfig) {
+      return { effectiveReferencingConfig: null, usingAssumedWaterRef: false };
+    }
+
+    // Check if we need to fix the water reference due to insufficient DOF
+    if (hasDSS === false && referencingConfig.refineReferences['1H']) {
+      // Count 1H shifts
+      const h1Shifts = observedShifts['1H']?.length || 0;
+
+      // If only 1 proton shift and we'd need to fit the reference, fix it instead
+      if (h1Shifts === 1) {
+        const fixedConfig = { ...referencingConfig };
+        fixedConfig.refineReferences = { ...referencingConfig.refineReferences, '1H': false };
+        // Keep the water reference value but mark it as fixed
+        return { effectiveReferencingConfig: fixedConfig, usingAssumedWaterRef: true };
+      }
+    }
+
+    return { effectiveReferencingConfig: referencingConfig, usingAssumedWaterRef: false };
+  }, [referencingConfig, hasDSS, observedShifts]);
+
+  // Validate degrees of freedom using the effective config
   const dofValidation = useMemo(() => {
-    if (!referencingConfig || totalObservedShifts === 0) {
+    if (!effectiveReferencingConfig || totalObservedShifts === 0) {
       return null;
     }
     return validateDegreesOfFreedom(
       shiftCounts,
-      referencingConfig.refineReferences,
-      referencingConfig.linkedToProton,
+      effectiveReferencingConfig.refineReferences,
+      effectiveReferencingConfig.linkedToProton,
       refineTemperature,
       refineIonicStrength
     );
-  }, [referencingConfig, shiftCounts, refineTemperature, refineIonicStrength, totalObservedShifts]);
+  }, [effectiveReferencingConfig, shiftCounts, refineTemperature, refineIonicStrength, totalObservedShifts]);
 
   // Check if can calculate
   const canCalculate = useMemo(() => {
@@ -129,7 +153,7 @@ function AppContent() {
 
   // Perform calculation
   const performCalculation = useCallback(async () => {
-    if (!canCalculate || !database || !referencingConfig) return;
+    if (!canCalculate || !database || !effectiveReferencingConfig) return;
 
     // Cancel any previous calculation
     if (abortControllerRef.current) {
@@ -143,10 +167,10 @@ function AppContent() {
       const options = {
         refineTemperature,
         refineIonicStrength,
-        refineReferences: referencingConfig.refineReferences,
-        referenceBounds: referencingConfig.referenceBounds,
-        linkedToProton: referencingConfig.linkedToProton,
-        protonFrequency: referencingConfig.protonFrequency,
+        refineReferences: effectiveReferencingConfig.refineReferences,
+        referenceBounds: effectiveReferencingConfig.referenceBounds,
+        linkedToProton: effectiveReferencingConfig.linkedToProton,
+        protonFrequency: effectiveReferencingConfig.protonFrequency,
         initialPH: 7.0,
         useGridSearch: true
       };
@@ -154,7 +178,7 @@ function AppContent() {
       const conditions = {
         temperature,
         ionicStrength,
-        referenceOffsets: referencingConfig.referenceOffsets
+        referenceOffsets: effectiveReferencingConfig.referenceOffsets
       };
 
       // Get samples for selected buffers
@@ -214,7 +238,7 @@ function AppContent() {
     ionicStrength,
     refineTemperature,
     refineIonicStrength,
-    referencingConfig
+    effectiveReferencingConfig
   ]);
 
   // Auto-calculate with debounce when inputs change
@@ -252,7 +276,7 @@ function AppContent() {
     ionicStrength,
     refineTemperature,
     refineIonicStrength,
-    referencingConfig,
+    effectiveReferencingConfig,
     spectrometerFreqs,
     dssShift
   ]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -371,12 +395,14 @@ function AppContent() {
           )}
         </section>
 
-        {selectedBuffers.length > 0 && (
+        {selectedBuffers.length > 0 && hasDSS !== null && (
           <section className="data-section">
             <HeadlineResult
               result={result}
               calculating={calculating}
               onScrollToResults={scrollToResults}
+              usingAssumedWaterRef={usingAssumedWaterRef}
+              temperature={temperature}
             />
 
             <NucleusTabPanel

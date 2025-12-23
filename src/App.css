@@ -366,6 +366,41 @@ section {
   border: 1px solid #a5d6a7;
 }
 
+.headline-result.warning {
+  background: #fff8e1;
+  border: 1px solid #ffcc80;
+}
+
+.headline-result.warning .headline-label {
+  color: #e65100;
+}
+
+.headline-result.warning .headline-value {
+  color: #bf360c;
+}
+
+.headline-result.warning .headline-uncertainty {
+  color: #e65100;
+}
+
+.headline-warning {
+  display: block;
+  font-size: 0.8rem;
+  color: #e65100;
+  font-weight: normal;
+  margin-top: 0.25rem;
+}
+
+.headline-result.warning .view-details-button {
+  border-color: #e65100;
+  color: #e65100;
+}
+
+.headline-result.warning .view-details-button:hover {
+  background: #e65100;
+  color: white;
+}
+
 .headline-result.error {
   background: #ffebee;
   border: 1px solid #ef9a9a;
