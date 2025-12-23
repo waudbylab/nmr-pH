@@ -1,14 +1,14 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { DatabaseLoader, useDatabase } from './components/DatabaseLoader';
 import { SolventSelector } from './components/SolventSelector';
 import { ConditionsPanel } from './components/ConditionsPanel';
 import { BufferSelector } from './components/BufferSelector';
-import { ReferencingPanel } from './components/ReferencingPanel';
+import { ReferencingPanel, buildReferencingConfig } from './components/ReferencingPanel';
 import { NucleusTabPanel } from './components/NucleusTabPanel';
-import { CalculateButton } from './components/CalculateButton';
+import { HeadlineResult } from './components/HeadlineResult';
 import { ResultsPanel } from './components/ResultsPanel';
 import { fitWithReassignment } from './numerical/fitting';
-import { validateFitResult } from './numerical/validation';
+import { validateFitResult, validateDegreesOfFreedom } from './numerical/validation';
 import './App.css';
 
 /**
@@ -24,12 +24,28 @@ function AppContent() {
   const [ionicStrength, setIonicStrength] = useState(0.15);
   const [refineTemperature, setRefineTemperature] = useState(false);
   const [refineIonicStrength, setRefineIonicStrength] = useState(false);
-  const [protonFrequency, setProtonFrequency] = useState(null);
-  const [referenceConfigs, setReferenceConfigs] = useState({});
+
+  // Referencing state
+  const [hasDSS, setHasDSS] = useState(null);
+  const [dssShift, setDssShift] = useState(0);
+  const [heteroReferencedToDSS, setHeteroReferencedToDSS] = useState(null);
+  const [spectrometerFreqs, setSpectrometerFreqs] = useState({});
+
+  // Data state
   const [observedShifts, setObservedShifts] = useState({});
   const [calculating, setCalculating] = useState(false);
   const [result, setResult] = useState(null);
   const [validation, setValidation] = useState(null);
+
+  // Ref for debounce timer
+  const calculateTimerRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const resultsRef = useRef(null);
+
+  // Scroll to results section
+  const scrollToResults = useCallback(() => {
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   // Derived state
   const selectedBuffers = useMemo(() => {
@@ -43,75 +59,102 @@ function AppContent() {
     return getNucleiForBuffers(selectedBuffers);
   }, [selectedBuffers, getNucleiForBuffers]);
 
-  // Count total observed shifts
-  const totalObservedShifts = useMemo(() => {
-    return Object.values(observedShifts).reduce((sum, shifts) => sum + shifts.length, 0);
+  // Count total observed shifts per nucleus
+  const shiftCounts = useMemo(() => {
+    const counts = {};
+    for (const [nucleus, shifts] of Object.entries(observedShifts)) {
+      counts[nucleus] = shifts?.length || 0;
+    }
+    return counts;
   }, [observedShifts]);
 
+  const totalObservedShifts = useMemo(() => {
+    return Object.values(observedShifts).reduce((sum, shifts) => sum + (shifts?.length || 0), 0);
+  }, [observedShifts]);
+
+  // Build referencing configuration based on current UI state
+  // Filter to only include nuclei that actually have observed shifts
+  const referencingConfig = useMemo(() => {
+    if (hasDSS === null || nuclei.length === 0) {
+      return null;
+    }
+
+    // Only include nuclei that have at least one observed shift
+    const nucleiWithShifts = nuclei.filter(n =>
+      observedShifts[n] && observedShifts[n].length > 0
+    );
+
+    if (nucleiWithShifts.length === 0) {
+      return null;
+    }
+
+    return buildReferencingConfig(
+      nucleiWithShifts,
+      hasDSS,
+      dssShift,
+      heteroReferencedToDSS,
+      spectrometerFreqs,
+      temperature
+    );
+  }, [nuclei, hasDSS, dssShift, heteroReferencedToDSS, spectrometerFreqs, temperature, observedShifts]);
+
+  // Validate degrees of freedom
+  const dofValidation = useMemo(() => {
+    if (!referencingConfig || totalObservedShifts === 0) {
+      return null;
+    }
+    return validateDegreesOfFreedom(
+      shiftCounts,
+      referencingConfig.refineReferences,
+      referencingConfig.linkedToProton,
+      refineTemperature,
+      refineIonicStrength
+    );
+  }, [referencingConfig, shiftCounts, refineTemperature, refineIonicStrength, totalObservedShifts]);
+
   // Check if can calculate
-  const canCalculate = selectedBuffers.length > 0 && totalObservedShifts > 0;
-  const calculateDisabledReason = !selectedBuffers.length
-    ? 'Select at least one buffer'
-    : !totalObservedShifts
-      ? 'Enter chemical shifts for at least one nucleus'
-      : '';
+  const canCalculate = useMemo(() => {
+    if (selectedBuffers.length === 0) return false;
+    if (totalObservedShifts === 0) return false;
+    if (hasDSS === null) return false;
+    if (!dofValidation || !dofValidation.valid) return false;
+    return true;
+  }, [selectedBuffers.length, totalObservedShifts, hasDSS, dofValidation]);
 
-  // Handle solvent change - reset buffer selection
-  const handleSolventChange = useCallback((newSolvent) => {
-    setSolvent(newSolvent);
-    setSelectedBufferIds([]);
-    setObservedShifts({});
-    setResult(null);
-    setValidation(null);
-  }, []);
+  // Determine if frequency inputs should be shown
+  const showFrequencyInputs = useMemo(() => {
+    const hasHeteronuclei = nuclei.some(n => n !== '1H');
+    return hasHeteronuclei && hasDSS !== null && !(hasDSS && heteroReferencedToDSS);
+  }, [nuclei, hasDSS, heteroReferencedToDSS]);
 
-  // Handle reference config change
-  const handleReferenceConfigChange = useCallback((nucleus, config) => {
-    setReferenceConfigs(prev => ({
-      ...prev,
-      [nucleus]: config
-    }));
-  }, []);
+  // Perform calculation
+  const performCalculation = useCallback(async () => {
+    if (!canCalculate || !database || !referencingConfig) return;
 
-  // Handle shifts change
-  const handleShiftsChange = useCallback((nucleus, shifts) => {
-    setObservedShifts(prev => ({
-      ...prev,
-      [nucleus]: shifts
-    }));
-    // Clear previous results when shifts change
-    setResult(null);
-    setValidation(null);
-  }, []);
-
-  // Handle calculation
-  const handleCalculate = useCallback(async () => {
-    if (!canCalculate || !database) return;
+    // Cancel any previous calculation
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
 
     setCalculating(true);
-    setResult(null);
-    setValidation(null);
 
     try {
-      // Build fitting options
-      const refineReferences = {};
-      for (const [nucleus, config] of Object.entries(referenceConfigs)) {
-        if (config.mode === 'not_referenced' && config.refineOffset) {
-          refineReferences[nucleus] = true;
-        }
-      }
-
       const options = {
         refineTemperature,
         refineIonicStrength,
-        refineReferences,
-        initialPH: 7.0
+        refineReferences: referencingConfig.refineReferences,
+        referenceBounds: referencingConfig.referenceBounds,
+        linkedToProton: referencingConfig.linkedToProton,
+        protonFrequency: referencingConfig.protonFrequency,
+        initialPH: 7.0,
+        useGridSearch: true
       };
 
       const conditions = {
         temperature,
         ionicStrength,
-        referenceOffsets: {}
+        referenceOffsets: referencingConfig.referenceOffsets
       };
 
       // Get samples for selected buffers
@@ -122,7 +165,6 @@ function AppContent() {
 
       // Run fitting
       const fitResult = await new Promise((resolve) => {
-        // Use setTimeout to allow UI to update
         setTimeout(() => {
           const result = fitWithReassignment(
             observedShifts,
@@ -132,8 +174,13 @@ function AppContent() {
             options
           );
           resolve(result);
-        }, 50);
+        }, 10);
       });
+
+      // Check if aborted
+      if (abortControllerRef.current?.signal.aborted) {
+        return;
+      }
 
       setResult(fitResult);
 
@@ -141,15 +188,22 @@ function AppContent() {
       if (fitResult.success) {
         const validationResult = validateFitResult(fitResult, conditions, samples);
         setValidation(validationResult);
+      } else {
+        setValidation(null);
       }
     } catch (error) {
-      console.error('Calculation error:', error);
-      setResult({
-        success: false,
-        error: error.message
-      });
+      if (!abortControllerRef.current?.signal.aborted) {
+        console.error('Calculation error:', error);
+        setResult({
+          success: false,
+          error: error.message
+        });
+        setValidation(null);
+      }
     } finally {
-      setCalculating(false);
+      if (!abortControllerRef.current?.signal.aborted) {
+        setCalculating(false);
+      }
     }
   }, [
     canCalculate,
@@ -160,8 +214,111 @@ function AppContent() {
     ionicStrength,
     refineTemperature,
     refineIonicStrength,
-    referenceConfigs
+    referencingConfig
   ]);
+
+  // Auto-calculate with debounce when inputs change
+  useEffect(() => {
+    // Clear previous timer
+    if (calculateTimerRef.current) {
+      clearTimeout(calculateTimerRef.current);
+    }
+
+    // Clear results immediately when inputs change
+    if (result) {
+      setResult(null);
+      setValidation(null);
+    }
+
+    // Only auto-calculate if we can
+    if (!canCalculate) {
+      return;
+    }
+
+    // Debounce the calculation
+    calculateTimerRef.current = setTimeout(() => {
+      performCalculation();
+    }, 500);
+
+    return () => {
+      if (calculateTimerRef.current) {
+        clearTimeout(calculateTimerRef.current);
+      }
+    };
+  }, [
+    canCalculate,
+    observedShifts,
+    temperature,
+    ionicStrength,
+    refineTemperature,
+    refineIonicStrength,
+    referencingConfig,
+    spectrometerFreqs,
+    dssShift
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle solvent change - reset buffer selection
+  const handleSolventChange = useCallback((newSolvent) => {
+    setSolvent(newSolvent);
+    setSelectedBufferIds([]);
+    setObservedShifts({});
+    setResult(null);
+    setValidation(null);
+  }, []);
+
+  // Handle buffer selection change
+  const handleBufferSelectionChange = useCallback((bufferIds) => {
+    setSelectedBufferIds(bufferIds);
+    setHasDSS(null);
+    setHeteroReferencedToDSS(null);
+    setSpectrometerFreqs({});
+    setResult(null);
+    setValidation(null);
+  }, []);
+
+  // Handle referencing changes
+  const handleHasDSSChange = useCallback((value) => {
+    setHasDSS(value);
+    if (!value) {
+      setHeteroReferencedToDSS(null);
+    }
+  }, []);
+
+  const handleDSSShiftChange = useCallback((value) => {
+    setDssShift(value);
+  }, []);
+
+  const handleHeteroReferencedChange = useCallback((value) => {
+    setHeteroReferencedToDSS(value);
+    if (value) {
+      setSpectrometerFreqs({});
+    }
+  }, []);
+
+  const handleSpectrometerFreqChange = useCallback((nucleus, freq) => {
+    setSpectrometerFreqs(prev => ({
+      ...prev,
+      [nucleus]: freq
+    }));
+  }, []);
+
+  // Handle shifts change
+  const handleShiftsChange = useCallback((nucleus, shifts) => {
+    setObservedShifts(prev => ({
+      ...prev,
+      [nucleus]: shifts
+    }));
+  }, []);
+
+  // Extract fitted reference offsets for display
+  const fittedReferenceOffsets = useMemo(() => {
+    if (!result?.success) return null;
+    const offsets = {};
+    if (result.conditions?.referenceOffsets) {
+      Object.assign(offsets, result.conditions.referenceOffsets);
+    }
+    return offsets;
+  }, [result]);
 
   return (
     <div className="app">
@@ -191,22 +348,37 @@ function AppContent() {
           <BufferSelector
             solvent={solvent}
             selectedBufferIds={selectedBufferIds}
-            onSelectionChange={setSelectedBufferIds}
+            onSelectionChange={handleBufferSelectionChange}
           />
 
           {nuclei.length > 0 && (
             <ReferencingPanel
               nuclei={nuclei}
-              referenceConfigs={referenceConfigs}
-              protonFrequency={protonFrequency}
-              onConfigChange={handleReferenceConfigChange}
-              onProtonFrequencyChange={setProtonFrequency}
+              hasDSS={hasDSS}
+              dssShift={dssShift}
+              heteroReferencedToDSS={heteroReferencedToDSS}
+              temperature={temperature}
+              onHasDSSChange={handleHasDSSChange}
+              onDSSShiftChange={handleDSSShiftChange}
+              onHeteroReferencedChange={handleHeteroReferencedChange}
             />
+          )}
+
+          {dofValidation && !dofValidation.valid && (
+            <div className="dof-warning">
+              <strong>Insufficient data:</strong> {dofValidation.message}
+            </div>
           )}
         </section>
 
         {selectedBuffers.length > 0 && (
           <section className="data-section">
+            <HeadlineResult
+              result={result}
+              calculating={calculating}
+              onScrollToResults={scrollToResults}
+            />
+
             <NucleusTabPanel
               nuclei={nuclei}
               buffers={selectedBuffers}
@@ -215,22 +387,18 @@ function AppContent() {
               ionicStrength={ionicStrength}
               observedShifts={observedShifts}
               onShiftsChange={handleShiftsChange}
+              spectrometerFreqs={spectrometerFreqs}
+              onSpectrometerFreqChange={handleSpectrometerFreqChange}
+              showFrequencyInputs={showFrequencyInputs}
               fittedPH={result?.success ? result.parameters.pH.value : null}
               phUncertainty={result?.success ? result.parameters.pH.uncertainty : null}
               assignments={result?.success ? result.assignments : null}
-            />
-
-            <CalculateButton
-              onClick={handleCalculate}
-              loading={calculating}
-              disabled={!canCalculate}
-              disabledReason={calculateDisabledReason}
             />
           </section>
         )}
 
         {result && (
-          <section className="results-section">
+          <section className="results-section" ref={resultsRef}>
             <ResultsPanel
               result={result}
               validation={validation}
@@ -238,6 +406,12 @@ function AppContent() {
               buffers={selectedBuffers}
               samplesMap={database.samplesMap}
               observedShifts={observedShifts}
+              nuclei={nuclei}
+              hasDSS={hasDSS}
+              dssShift={dssShift}
+              heteroReferencedToDSS={heteroReferencedToDSS}
+              spectrometerFreqs={spectrometerFreqs}
+              fittedReferenceOffsets={fittedReferenceOffsets}
             />
           </section>
         )}

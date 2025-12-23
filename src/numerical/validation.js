@@ -5,6 +5,161 @@
  */
 
 /**
+ * Validate degrees of freedom for fitting based on the new referencing model.
+ *
+ * DOF Calculation:
+ * For each nucleus:
+ *   effective_shifts[nucleus] = n_shifts[nucleus] - (1 if needs_ref_fitting else 0)
+ *
+ * total_dof = sum(effective_shifts) - n_fitting_params
+ *
+ * where n_fitting_params includes:
+ *   - 1 (pH, always)
+ *   + (1 if refining temperature)
+ *   + (1 if refining ionic strength)
+ *   (reference offsets are already accounted for in effective_shifts)
+ *
+ * Validation Rules:
+ *   - total_dof >= 1 - minimum to fit pH
+ *   - total_dof >= 2 - if refining temperature OR ionic strength
+ *   - total_dof >= 3 - if refining BOTH temperature AND ionic strength
+ *
+ * @param {Object} shiftCounts - Object mapping nucleus -> number of observed shifts
+ * @param {Object} refineReferences - Object mapping nucleus -> boolean (whether to fit reference)
+ * @param {Array<string>} linkedToProton - Nuclei linked to 1H (don't need fitting)
+ * @param {boolean} refineTemperature - Whether temperature is being refined
+ * @param {boolean} refineIonicStrength - Whether ionic strength is being refined
+ * @returns {Object} Validation result
+ */
+export function validateDegreesOfFreedom(
+  shiftCounts,
+  refineReferences,
+  linkedToProton = [],
+  refineTemperature = false,
+  refineIonicStrength = false
+) {
+  const details = [];
+  let totalEffectiveShifts = 0;
+
+  // Calculate effective shifts per nucleus
+  for (const [nucleus, nShifts] of Object.entries(shiftCounts)) {
+    if (nShifts === 0) continue;
+
+    const needsRefFitting = refineReferences[nucleus] && !linkedToProton.includes(nucleus);
+    const effectiveShifts = nShifts - (needsRefFitting ? 1 : 0);
+
+    if (needsRefFitting) {
+      details.push(`${nucleus}: ${nShifts} shift(s) - 1 for reference = ${effectiveShifts} effective`);
+    } else {
+      details.push(`${nucleus}: ${nShifts} shift(s) = ${effectiveShifts} effective`);
+    }
+
+    totalEffectiveShifts += effectiveShifts;
+  }
+
+  // Count fitting parameters (excluding reference offsets, which are in effective_shifts)
+  let nFittingParams = 1; // pH always
+  const paramDetails = ['pH'];
+
+  if (refineTemperature) {
+    nFittingParams++;
+    paramDetails.push('Temperature');
+  }
+
+  if (refineIonicStrength) {
+    nFittingParams++;
+    paramDetails.push('Ionic strength');
+  }
+
+  details.push(`Fitting parameters: ${paramDetails.join(', ')}`);
+
+  // Calculate total DOF
+  const totalDof = totalEffectiveShifts - nFittingParams;
+  details.push(`Degrees of freedom: ${totalEffectiveShifts} - ${nFittingParams} = ${totalDof}`);
+
+  // Determine required DOF
+  // 0 DOF is acceptable (exactly determined system)
+  // This applies regardless of which parameters are being refined
+  const requiredDof = 0;
+
+  // Validate
+  const valid = totalDof >= requiredDof;
+  let message = '';
+
+  if (!valid) {
+    message = `Underdetermined system: need more chemical shifts. Current DOF: ${totalDof}`;
+  }
+
+  return {
+    valid,
+    totalEffectiveShifts,
+    nFittingParams,
+    totalDof,
+    requiredDof,
+    message,
+    details
+  };
+}
+
+/**
+ * Check if sufficient chemical shifts are provided for each nucleus based on referencing mode.
+ *
+ * Scenarios:
+ * 1. DSS-referenced: 1 shift minimum (no reference offset to fit)
+ * 2. Not referenced, independent offset: 2 shifts minimum (1 for pH, 1 for reference)
+ * 3. Linked to 1H (via spectrometer frequency): treated as DSS-referenced (1 shift minimum)
+ *
+ * @param {Object} observedShifts - Object mapping nucleus -> array of shifts
+ * @param {Object} referenceConfigs - Configuration for each nucleus
+ * @param {Array<string>} linkedToProton - Nuclei whose reference is linked to 1H
+ * @returns {Object} Validation result
+ */
+export function validateMinimumShifts(observedShifts, referenceConfigs, linkedToProton = []) {
+  const issues = [];
+  let valid = true;
+
+  for (const [nucleus, shifts] of Object.entries(observedShifts)) {
+    const config = referenceConfigs[nucleus] || { mode: 'not_referenced', refineOffset: true };
+    const nShifts = shifts.length;
+
+    let minRequired;
+    let reason;
+
+    if (config.mode === 'referenced') {
+      // Scenario 2: Referenced to DSS
+      minRequired = 1;
+      reason = 'referenced to DSS';
+    } else if (linkedToProton.includes(nucleus)) {
+      // Scenario 3: Linked to 1H via spectrometer frequency
+      minRequired = 1;
+      reason = 'reference linked to ¹H';
+    } else {
+      // Scenario 1 or 4: Independent reference offset needs fitting
+      minRequired = 2;
+      reason = 'independent reference offset';
+    }
+
+    if (nShifts < minRequired) {
+      valid = false;
+      issues.push({
+        nucleus,
+        nShifts,
+        minRequired,
+        message: `${nucleus}: ${nShifts} shift(s) provided, but ${minRequired} required (${reason})`
+      });
+    }
+  }
+
+  return {
+    valid,
+    issues,
+    summary: valid
+      ? 'Sufficient shifts for all nuclei'
+      : `Insufficient shifts: ${issues.map(i => i.nucleus).join(', ')}`
+  };
+}
+
+/**
  * Check if system has sufficient degrees of freedom.
  *
  * @param {number} nObservations - Number of observations

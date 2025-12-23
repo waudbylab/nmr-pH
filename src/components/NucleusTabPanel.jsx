@@ -1,6 +1,28 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChemicalShiftPlot } from './ChemicalShiftPlot';
 import { ShiftInputArea } from './ShiftInputArea';
+
+/**
+ * Mass order for nuclei (lower = shown first).
+ */
+const NUCLEUS_MASS_ORDER = {
+  '1H': 1,
+  '13C': 13,
+  '15N': 15,
+  '19F': 19,
+  '31P': 31
+};
+
+/**
+ * Sort nuclei by mass number.
+ */
+function sortNucleiByMass(nuclei) {
+  return [...nuclei].sort((a, b) => {
+    const massA = NUCLEUS_MASS_ORDER[a] ?? parseInt(a.match(/^\d+/)?.[0] || '999');
+    const massB = NUCLEUS_MASS_ORDER[b] ?? parseInt(b.match(/^\d+/)?.[0] || '999');
+    return massA - massB;
+  });
+}
 
 /**
  * NucleusTabPanel component.
@@ -14,18 +36,38 @@ export function NucleusTabPanel({
   ionicStrength,
   observedShifts,
   onShiftsChange,
+  spectrometerFreqs = {},
+  onSpectrometerFreqChange,
+  showFrequencyInputs = false,
   fittedPH = null,
   phUncertainty = null,
   assignments = null
 }) {
-  const [activeTab, setActiveTab] = useState(nuclei[0] || null);
+  // Sort nuclei by mass
+  const sortedNuclei = useMemo(() => sortNucleiByMass(nuclei), [nuclei]);
+
+  const [activeTab, setActiveTab] = useState(sortedNuclei[0] || null);
+  const containerRef = useRef(null);
 
   // Ensure active tab is valid
-  if (activeTab && !nuclei.includes(activeTab)) {
-    setActiveTab(nuclei[0] || null);
+  if (activeTab && !sortedNuclei.includes(activeTab)) {
+    setActiveTab(sortedNuclei[0] || null);
   }
 
-  if (nuclei.length === 0) {
+  // Trigger Plotly resize when tab changes or window resizes
+  useEffect(() => {
+    // Dispatch a resize event after tab change to update Plotly plots
+    const handleResize = () => {
+      window.dispatchEvent(new Event('resize'));
+    };
+
+    // Small delay to ensure DOM has updated
+    const timeoutId = setTimeout(handleResize, 50);
+
+    return () => clearTimeout(timeoutId);
+  }, [activeTab]);
+
+  if (sortedNuclei.length === 0) {
     return (
       <div className="nucleus-tab-panel empty">
         <p>Select buffers to view chemical shift data</p>
@@ -36,7 +78,7 @@ export function NucleusTabPanel({
   return (
     <div className="nucleus-tab-panel">
       <div className="tab-header">
-        {nuclei.map(nucleus => (
+        {sortedNuclei.map(nucleus => (
           <button
             key={nucleus}
             className={`tab-button ${activeTab === nucleus ? 'active' : ''}`}
@@ -49,12 +91,11 @@ export function NucleusTabPanel({
         ))}
       </div>
 
-      <div className="tab-content">
-        {nuclei.map(nucleus => (
+      <div className="tab-content" ref={containerRef}>
+        {sortedNuclei.map(nucleus => (
           <div
             key={nucleus}
-            className={`tab-pane ${activeTab === nucleus ? 'active' : ''}`}
-            style={{ display: activeTab === nucleus ? 'block' : 'none' }}
+            className={`tab-pane ${activeTab === nucleus ? 'active' : 'hidden'}`}
           >
             <div className="nucleus-content">
               <div className="plot-section">
@@ -78,6 +119,10 @@ export function NucleusTabPanel({
                   nucleus={nucleus}
                   value={observedShifts[nucleus] || []}
                   onChange={(shifts) => onShiftsChange(nucleus, shifts)}
+                  spectrometerFreq={spectrometerFreqs[nucleus]}
+                  protonFreq={spectrometerFreqs['1H']}
+                  onSpectrometerFreqChange={onSpectrometerFreqChange}
+                  showFrequencyInput={showFrequencyInputs}
                 />
               </div>
             </div>

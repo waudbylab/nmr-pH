@@ -3,6 +3,7 @@ import { AssignmentsTable } from './AssignmentsTable';
 import { WarningsDisplay } from './WarningsDisplay';
 import { CitationsSection } from './CitationsSection';
 import { DownloadButtons } from './DownloadButtons';
+import { ReferenceConfigSummary } from '../ReferencingPanel';
 
 /**
  * ResultsPanel component.
@@ -14,7 +15,13 @@ export function ResultsPanel({
   conditions,
   buffers,
   samplesMap,
-  observedShifts
+  observedShifts,
+  nuclei,
+  hasDSS,
+  dssShift,
+  heteroReferencedToDSS,
+  spectrometerFreqs,
+  fittedReferenceOffsets
 }) {
   if (!result) {
     return null;
@@ -29,6 +36,19 @@ export function ResultsPanel({
       {result.success && (
         <>
           <FittedParameters result={result} nominalConditions={conditions} />
+
+          {nuclei && nuclei.length > 0 && (
+            <ReferenceConfigSummary
+              nuclei={nuclei}
+              hasDSS={hasDSS}
+              dssShift={dssShift}
+              heteroReferencedToDSS={heteroReferencedToDSS}
+              spectrometerFreqs={spectrometerFreqs}
+              temperature={conditions.temperature}
+              fittedReferenceOffsets={fittedReferenceOffsets}
+            />
+          )}
+
           <AssignmentsTable assignments={result.assignments} />
           <CitationsSection buffers={buffers} samplesMap={samplesMap} />
           <DownloadButtons
@@ -37,6 +57,12 @@ export function ResultsPanel({
             buffers={buffers}
             samplesMap={samplesMap}
             observedShifts={observedShifts}
+            nuclei={nuclei}
+            hasDSS={hasDSS}
+            dssShift={dssShift}
+            heteroReferencedToDSS={heteroReferencedToDSS}
+            spectrometerFreqs={spectrometerFreqs}
+            fittedReferenceOffsets={fittedReferenceOffsets}
           />
         </>
       )}

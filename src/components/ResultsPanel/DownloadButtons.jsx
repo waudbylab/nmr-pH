@@ -1,14 +1,16 @@
 import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 /**
  * Generate JSON data for download.
  */
-function generateJSON(result, conditions, buffers, observedShifts) {
+function generateJSON(result, conditions, buffers, observedShifts, referencingInfo) {
   return JSON.stringify({
     timestamp: new Date().toISOString(),
     input: {
       conditions,
       observedShifts,
+      referencing: referencingInfo,
       buffers: buffers.map(b => ({
         buffer_id: b.buffer_id,
         buffer_name: b.buffer_name
@@ -26,9 +28,18 @@ function generateJSON(result, conditions, buffers, observedShifts) {
 }
 
 /**
- * Generate PDF report.
+ * Format nucleus for display.
  */
-function generatePDF(result, conditions, buffers, samplesMap) {
+function formatNucleus(nucleus) {
+  const mass = nucleus.match(/^\d+/)?.[0] || '';
+  const element = nucleus.replace(/^\d+/, '');
+  return `${mass}${element}`;
+}
+
+/**
+ * Generate PDF report with plots.
+ */
+async function generatePDF(result, conditions, buffers, samplesMap, nuclei, referencingInfo) {
   const doc = new jsPDF();
   let y = 20;
 
@@ -51,26 +62,67 @@ function generatePDF(result, conditions, buffers, samplesMap) {
     doc.setFontSize(11);
     const params = result.parameters;
 
-    doc.text(`pH: ${params.pH.value.toFixed(2)} ± ${params.pH.uncertainty.toFixed(2)}`, 25, y);
+    // pH
+    const phUnc = params.pH.uncertainty;
+    doc.text(`pH: ${params.pH.value.toFixed(3)} ${phUnc ? `± ${phUnc.toFixed(3)}` : ''}`, 25, y);
     y += 7;
 
+    // Temperature
     if (params.temperature) {
-      doc.text(`Temperature: ${params.temperature.value.toFixed(1)} ± ${params.temperature.uncertainty.toFixed(1)} K`, 25, y);
-      y += 7;
+      const tUnc = params.temperature.uncertainty;
+      doc.text(`Temperature: ${params.temperature.value.toFixed(2)} ${tUnc ? `± ${tUnc.toFixed(2)}` : ''} K`, 25, y);
     } else {
-      doc.text(`Temperature: ${conditions.temperature.toFixed(1)} K (fixed)`, 25, y);
-      y += 7;
+      doc.text(`Temperature: ${conditions.temperature.toFixed(2)} K (fixed)`, 25, y);
     }
+    y += 7;
 
+    // Ionic strength
     if (params.ionicStrength) {
-      doc.text(`Ionic Strength: ${params.ionicStrength.value.toFixed(3)} ± ${params.ionicStrength.uncertainty.toFixed(3)} M`, 25, y);
-      y += 7;
+      const iUnc = params.ionicStrength.uncertainty;
+      doc.text(`Ionic Strength: ${params.ionicStrength.value.toFixed(4)} ${iUnc ? `± ${iUnc.toFixed(4)}` : ''} M`, 25, y);
     } else {
-      doc.text(`Ionic Strength: ${conditions.ionicStrength.toFixed(3)} M (fixed)`, 25, y);
-      y += 7;
+      doc.text(`Ionic Strength: ${conditions.ionicStrength.toFixed(4)} M (fixed)`, 25, y);
     }
+    y += 12;
 
-    y += 10;
+    // Reference Configuration
+    if (nuclei && nuclei.length > 0 && referencingInfo) {
+      doc.setFontSize(14);
+      doc.text('Reference Configuration', 20, y);
+      y += 10;
+
+      doc.setFontSize(11);
+      for (const nucleus of nuclei) {
+        let status = '';
+        if (nucleus === '1H') {
+          if (referencingInfo.hasDSS) {
+            status = `Referenced to DSS at ${referencingInfo.dssShift ?? 0} ppm`;
+          } else {
+            const offset = referencingInfo.fittedReferenceOffsets?.['1H'];
+            status = offset !== undefined
+              ? `Fitted: ${offset.toFixed(3)} ppm`
+              : 'Fitting from water signal';
+          }
+        } else {
+          if (referencingInfo.hasDSS && referencingInfo.heteroReferencedToDSS) {
+            status = 'Referenced to DSS at 0 ppm';
+          } else if (referencingInfo.spectrometerFreqs?.['1H'] && referencingInfo.spectrometerFreqs?.[nucleus]) {
+            const offset = referencingInfo.fittedReferenceOffsets?.[nucleus];
+            status = offset !== undefined
+              ? `Linked to ¹H: ${offset.toFixed(3)} ppm`
+              : 'Linked to ¹H';
+          } else {
+            const offset = referencingInfo.fittedReferenceOffsets?.[nucleus];
+            status = offset !== undefined
+              ? `Fitted: ${offset.toFixed(3)} ppm`
+              : 'Fitting independently';
+          }
+        }
+        doc.text(`${formatNucleus(nucleus)}: ${status}`, 25, y);
+        y += 7;
+      }
+      y += 5;
+    }
 
     // Fit statistics
     doc.setFontSize(14);
@@ -88,9 +140,52 @@ function generatePDF(result, conditions, buffers, samplesMap) {
     doc.text(`Parameters: ${stats.nParameters}`, 25, y);
     y += 7;
     doc.text(`Degrees of freedom: ${stats.degreesOfFreedom}`, 25, y);
-    y += 15;
+    y += 12;
+
+    // Peak assignments
+    doc.setFontSize(14);
+    doc.text('Peak Assignments', 20, y);
+    y += 10;
+
+    doc.setFontSize(10);
+    for (const [nucleus, assignments] of Object.entries(result.assignments)) {
+      if (!assignments || assignments.length === 0) continue;
+
+      doc.setFontSize(11);
+      doc.text(`${formatNucleus(nucleus)}:`, 25, y);
+      y += 6;
+
+      doc.setFontSize(9);
+      for (const assignment of assignments) {
+        if (assignment.assigned) {
+          const residual = assignment.residual !== undefined
+            ? ` (residual: ${assignment.residual.toFixed(4)} ppm)`
+            : '';
+          doc.text(
+            `  ${assignment.observed_shift.toFixed(3)} ppm → ${assignment.buffer_name} ${assignment.resonance_id}${residual}`,
+            25,
+            y
+          );
+        } else {
+          doc.text(`  ${assignment.observed_shift.toFixed(3)} ppm → unassigned`, 25, y);
+        }
+        y += 5;
+
+        // Check for page break
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+      }
+      y += 3;
+    }
 
     // Buffers used
+    if (y > 240) {
+      doc.addPage();
+      y = 20;
+    }
+
     doc.setFontSize(14);
     doc.text('Buffers Used', 20, y);
     y += 10;
@@ -100,6 +195,47 @@ function generatePDF(result, conditions, buffers, samplesMap) {
       doc.text(`- ${buffer.buffer_name} (${buffer.buffer_id})`, 25, y);
       y += 7;
     }
+
+    // Try to capture plots
+    try {
+      const plotElements = document.querySelectorAll('.chemical-shift-plot .js-plotly-plot');
+      if (plotElements.length > 0) {
+        doc.addPage();
+        y = 20;
+
+        doc.setFontSize(14);
+        doc.text('Chemical Shift Plots', 20, y);
+        y += 15;
+
+        for (const plotEl of plotElements) {
+          if (y > 200) {
+            doc.addPage();
+            y = 20;
+          }
+
+          try {
+            const canvas = await html2canvas(plotEl, {
+              scale: 2,
+              useCORS: true,
+              logging: false
+            });
+            const imgData = canvas.toDataURL('image/png');
+
+            // Calculate dimensions to fit on page
+            const imgWidth = 170;
+            const imgHeight = (canvas.height / canvas.width) * imgWidth;
+
+            doc.addImage(imgData, 'PNG', 20, y, imgWidth, Math.min(imgHeight, 120));
+            y += Math.min(imgHeight, 120) + 15;
+          } catch (err) {
+            console.warn('Could not capture plot:', err);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Could not capture plots:', err);
+    }
+
   } else {
     doc.setFontSize(12);
     doc.text('Fitting failed:', 20, y);
@@ -119,14 +255,28 @@ export function DownloadButtons({
   conditions,
   buffers,
   samplesMap,
-  observedShifts
+  observedShifts,
+  nuclei,
+  hasDSS,
+  dssShift,
+  heteroReferencedToDSS,
+  spectrometerFreqs,
+  fittedReferenceOffsets
 }) {
   if (!result) {
     return null;
   }
 
+  const referencingInfo = {
+    hasDSS,
+    dssShift,
+    heteroReferencedToDSS,
+    spectrometerFreqs,
+    fittedReferenceOffsets
+  };
+
   const downloadJSON = () => {
-    const json = generateJSON(result, conditions, buffers, observedShifts);
+    const json = generateJSON(result, conditions, buffers, observedShifts, referencingInfo);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -136,9 +286,14 @@ export function DownloadButtons({
     URL.revokeObjectURL(url);
   };
 
-  const downloadPDF = () => {
-    const doc = generatePDF(result, conditions, buffers, samplesMap);
-    doc.save('nmr-ph-report.pdf');
+  const downloadPDF = async () => {
+    try {
+      const doc = await generatePDF(result, conditions, buffers, samplesMap, nuclei, referencingInfo);
+      doc.save('nmr-ph-report.pdf');
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('Failed to generate PDF. Please try again.');
+    }
   };
 
   const downloadCitations = () => {

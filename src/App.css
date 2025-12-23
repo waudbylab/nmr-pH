@@ -229,6 +229,69 @@ section {
   margin-bottom: 1rem;
 }
 
+.referencing-panel.compact {
+  padding-top: 0.75rem;
+}
+
+.referencing-step.compact {
+  margin-bottom: 0.75rem;
+}
+
+.step-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.step-question {
+  font-weight: 500;
+}
+
+.radio-group.inline {
+  display: flex;
+  gap: 1rem;
+}
+
+.radio-group.inline label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.radio-group.inline input[type="radio"] {
+  margin: 0;
+}
+
+.dss-shift-input.inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dss-shift-input.inline label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+}
+
+.dss-shift-input.inline input {
+  width: 80px;
+}
+
+.referencing-message {
+  margin-top: 0.5rem;
+}
+
+.referencing-message .hint {
+  font-size: 0.875rem;
+  color: #666;
+  font-style: italic;
+}
+
 .proton-frequency {
   margin-bottom: 1rem;
   padding-bottom: 1rem;
@@ -283,6 +346,100 @@ section {
   font-weight: normal;
 }
 
+/* Headline Result */
+.headline-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.headline-result.calculating {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.headline-result.success {
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+}
+
+.headline-result.error {
+  background: #ffebee;
+  border: 1px solid #ef9a9a;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.headline-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #ddd;
+  border-top-color: #1a73e8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 0.75rem;
+}
+
+.headline-text {
+  font-size: 1rem;
+}
+
+.headline-ph {
+  display: flex;
+  flex-direction: column;
+}
+
+.headline-label {
+  font-size: 0.875rem;
+  color: #2e7d32;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.headline-result.error .headline-label {
+  color: #c62828;
+}
+
+.headline-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1b5e20;
+  font-family: monospace;
+}
+
+.headline-uncertainty {
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: #388e3c;
+}
+
+.headline-error-text {
+  color: #c62828;
+  font-size: 0.9rem;
+}
+
+.view-details-button {
+  padding: 0.5rem 1rem;
+  background: white;
+  border: 1px solid #2e7d32;
+  color: #2e7d32;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-details-button:hover {
+  background: #2e7d32;
+  color: white;
+}
+
 /* Nucleus Tab Panel */
 .nucleus-tab-panel {
   margin-top: 1rem;
@@ -319,6 +476,28 @@ section {
 .tab-button.active {
   color: #1a73e8;
   border-bottom-color: #1a73e8;
+}
+
+.tab-content {
+  position: relative;
+}
+
+.tab-pane {
+  /* Use visibility and position for hidden tabs so Plotly can size correctly */
+}
+
+.tab-pane.hidden {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  width: 100%;
+  z-index: -1;
+}
+
+.tab-pane.active {
+  position: relative;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .nucleus-content {
@@ -800,5 +979,37 @@ section {
 
   .citation-item {
     background: #333;
+  }
+
+  .headline-result.calculating {
+    background: #333;
+  }
+
+  .headline-result.success {
+    background: #1b3d2f;
+    border-color: #2e7d32;
+  }
+
+  .headline-label {
+    color: #81c784;
+  }
+
+  .headline-value {
+    color: #a5d6a7;
+  }
+
+  .headline-uncertainty {
+    color: #81c784;
+  }
+
+  .view-details-button {
+    background: #2a2a2a;
+    border-color: #81c784;
+    color: #81c784;
+  }
+
+  .view-details-button:hover {
+    background: #2e7d32;
+    color: white;
   }
 }

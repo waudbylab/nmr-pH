@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { calculateSpectrometerFrequency } from './ReferencingPanel';
 
 /**
  * Debounce hook.
@@ -29,12 +30,17 @@ function parseShifts(text) {
 
 /**
  * ShiftInputArea component.
- * Text area for entering observed chemical shifts for a single nucleus.
+ * Text area for entering observed chemical shifts for a single nucleus,
+ * with optional spectrometer frequency input for heteronuclear linking.
  */
 export function ShiftInputArea({
   nucleus,
   value,
   onChange,
+  spectrometerFreq,
+  protonFreq,
+  onSpectrometerFreqChange,
+  showFrequencyInput = false,
   debounceMs = 500
 }) {
   const [text, setText] = useState('');
@@ -52,13 +58,16 @@ export function ShiftInputArea({
   useEffect(() => {
     const shifts = parseShifts(debouncedText);
     onChange(shifts);
-  }, [debouncedText, onChange]);
+  }, [debouncedText]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = useCallback((e) => {
     setText(e.target.value);
   }, []);
 
-  const nucleusLabel = nucleus.replace(/(\d+)/, '<sup>$1</sup>');
+  // Calculate expected frequency for heteronuclei
+  const expectedFreq = nucleus !== '1H' && protonFreq
+    ? calculateSpectrometerFrequency(nucleus, protonFreq)
+    : null;
 
   return (
     <div className="shift-input-area">
@@ -79,6 +88,37 @@ export function ShiftInputArea({
       <div className="shift-count">
         {parseShifts(text).length} peaks entered
       </div>
+
+      {showFrequencyInput && onSpectrometerFreqChange && (
+        <div className="spectrometer-freq-input">
+          <label>
+            <span className="freq-label">
+              <sup>{nucleus.match(/^\d+/)?.[0]}</sup>
+              {nucleus.replace(/^\d+/, '')} spectrometer frequency (MHz):
+            </span>
+            <input
+              type="number"
+              value={spectrometerFreq ?? ''}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                onSpectrometerFreqChange(nucleus, isNaN(val) ? null : val);
+              }}
+              placeholder={expectedFreq ? expectedFreq.toFixed(3) : 'e.g., 600.13'}
+              step="0.001"
+            />
+          </label>
+          {expectedFreq && !spectrometerFreq && (
+            <span className="expected-freq hint">
+              Expected from ¹H: {expectedFreq.toFixed(3)} MHz
+            </span>
+          )}
+          {nucleus !== '1H' && protonFreq && spectrometerFreq && (
+            <span className="linked-status hint">
+              Reference linked to ¹H
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

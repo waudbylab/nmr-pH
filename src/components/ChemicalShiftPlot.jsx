@@ -18,6 +18,15 @@ function getBufferColor(index) {
 }
 
 /**
+ * Format nucleus label for axis.
+ */
+function formatNucleusLabel(nucleus) {
+  const mass = nucleus.match(/^\d+/)?.[0] || '';
+  const element = nucleus.replace(/^\d+/, '');
+  return `<sup>${mass}</sup>${element}`;
+}
+
+/**
  * ChemicalShiftPlot component.
  * Displays chemical shift vs pH curves for selected buffers.
  */
@@ -32,7 +41,7 @@ export function ChemicalShiftPlot({
   phUncertainty = null,
   assignments = null,
   pHRange = [2, 12],
-  height = 400
+  height = 600 // 50% taller than original 400
 }) {
   // Generate curve data for all selected buffers
   const curveData = useMemo(() => {
@@ -184,32 +193,34 @@ export function ChemicalShiftPlot({
     return plotTraces;
   }, [curveData, observedShifts, fittedPH, phUncertainty, assignments, pHRange]);
 
-  // Layout configuration
+  // Layout configuration with legend below and axis labels
   const layout = useMemo(() => ({
-    title: {
-      text: `<sup>${nucleus.match(/^\d+/)?.[0] || ''}</sup>${nucleus.replace(/^\d+/, '')} Chemical Shifts`,
-      font: { size: 16 }
-    },
     xaxis: {
-      title: 'Chemical Shift (ppm)',
+      title: {
+        text: `${formatNucleusLabel(nucleus)} chemical shift (ppm)`,
+        font: { size: 14 }
+      },
       autorange: 'reversed', // NMR convention: high field to low field
       showgrid: true,
       gridcolor: '#eee'
     },
     yaxis: {
-      title: 'pH',
+      title: {
+        text: 'pH',
+        font: { size: 14 }
+      },
       range: pHRange,
       showgrid: true,
       gridcolor: '#eee'
     },
     legend: {
       orientation: 'h',
-      yanchor: 'bottom',
-      y: 1.02,
-      xanchor: 'right',
-      x: 1
+      yanchor: 'top',
+      y: -0.15,
+      xanchor: 'center',
+      x: 0.5
     },
-    margin: { t: 60, r: 20, b: 50, l: 60 },
+    margin: { t: 20, r: 20, b: 120, l: 60 },
     hovermode: 'closest',
     showlegend: true
   }), [nucleus, pHRange]);
