@@ -8,5 +8,4 @@
 export * from './bufferModel.js';
 export * from './peakAssignment.js';
 export * from './fitting.js';
-export * from './uncertainty.js';
 export * from './validation.js';
