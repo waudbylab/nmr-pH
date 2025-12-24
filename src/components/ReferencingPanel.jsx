@@ -84,15 +84,20 @@ function DSSDetectionStep({
 }) {
   // Use local state for text input to allow typing negative numbers freely
   const [dssText, setDssText] = useState(dssShift?.toString() ?? '0');
+  // Track if user is actively editing to prevent external sync during typing
+  const [isEditing, setIsEditing] = useState(false);
 
-  // Sync local state when prop changes externally
+  // Sync local state when prop changes externally (but not while editing)
   useEffect(() => {
-    setDssText(dssShift?.toString() ?? '0');
-  }, [dssShift]);
+    if (!isEditing) {
+      setDssText(dssShift?.toString() ?? '0');
+    }
+  }, [dssShift, isEditing]);
 
   const handleDssTextChange = (e) => {
     const text = e.target.value;
     setDssText(text);
+    setIsEditing(true);
 
     // Parse and update if valid number (including partial input like "-" or "-0.")
     const parsed = parseFloat(text);
@@ -102,6 +107,7 @@ function DSSDetectionStep({
   };
 
   const handleDssBlur = () => {
+    setIsEditing(false);
     // On blur, normalize the display and ensure valid value
     const parsed = parseFloat(dssText);
     if (isNaN(parsed)) {

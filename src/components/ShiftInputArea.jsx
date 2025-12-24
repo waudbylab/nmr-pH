@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { calculateSpectrometerFrequency } from './ReferencingPanel';
+import { DEFAULT_SHIFT_UNCERTAINTIES } from '../numerical/fitting';
 
 /**
  * Debounce hook.
@@ -37,6 +38,8 @@ export function ShiftInputArea({
   nucleus,
   value,
   onChange,
+  shiftUncertainty,
+  onShiftUncertaintyChange,
   spectrometerFreq,
   protonFreq,
   onSpectrometerFreqChange,
@@ -44,6 +47,12 @@ export function ShiftInputArea({
   debounceMs = 500
 }) {
   const [text, setText] = useState('');
+  const defaultUncertainty = DEFAULT_SHIFT_UNCERTAINTIES[nucleus] ?? 0.01;
+
+  // Local state for uncertainty input to allow free typing
+  const [uncertaintyText, setUncertaintyText] = useState(
+    shiftUncertainty != null ? shiftUncertainty.toString() : ''
+  );
 
   // Initialize text from value
   useEffect(() => {
@@ -87,6 +96,43 @@ export function ShiftInputArea({
       />
       <div className="shift-count">
         {parseShifts(text).length} peaks entered
+      </div>
+
+      <div className="shift-uncertainty-input">
+        <label>
+          <span className="uncertainty-label">
+            Shift uncertainty (ppm):
+          </span>
+          <input
+            type="text"
+            value={uncertaintyText}
+            onChange={(e) => {
+              const inputText = e.target.value;
+              setUncertaintyText(inputText);
+              // Parse and propagate valid non-negative numbers
+              const val = parseFloat(inputText);
+              if (!isNaN(val) && val >= 0) {
+                onShiftUncertaintyChange?.(nucleus, val);
+              } else if (inputText === '') {
+                onShiftUncertaintyChange?.(nucleus, null);
+              }
+            }}
+            onBlur={() => {
+              // On blur, normalize display
+              const val = parseFloat(uncertaintyText);
+              if (isNaN(val) || val < 0) {
+                setUncertaintyText('');
+                onShiftUncertaintyChange?.(nucleus, null);
+              } else {
+                setUncertaintyText(val.toString());
+              }
+            }}
+            placeholder={defaultUncertainty.toString()}
+          />
+        </label>
+        <span className="hint">
+          Default: {defaultUncertainty} ppm
+        </span>
       </div>
 
       {showFrequencyInput && onSpectrometerFreqChange && (

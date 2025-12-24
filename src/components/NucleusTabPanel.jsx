@@ -36,6 +36,8 @@ export function NucleusTabPanel({
   ionicStrength,
   observedShifts,
   onShiftsChange,
+  shiftUncertainties = {},
+  onShiftUncertaintyChange,
   spectrometerFreqs = {},
   onSpectrometerFreqChange,
   showFrequencyInputs = false,
@@ -121,6 +123,8 @@ export function NucleusTabPanel({
                   nucleus={nucleus}
                   value={observedShifts[nucleus] || []}
                   onChange={(shifts) => onShiftsChange(nucleus, shifts)}
+                  shiftUncertainty={shiftUncertainties[nucleus]}
+                  onShiftUncertaintyChange={onShiftUncertaintyChange}
                   spectrometerFreq={spectrometerFreqs[nucleus]}
                   protonFreq={spectrometerFreqs['1H']}
                   onSpectrometerFreqChange={onSpectrometerFreqChange}

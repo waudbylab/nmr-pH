@@ -33,6 +33,7 @@ function AppContent() {
 
   // Data state
   const [observedShifts, setObservedShifts] = useState({});
+  const [shiftUncertainties, setShiftUncertainties] = useState({});
   const [calculating, setCalculating] = useState(false);
   const [result, setResult] = useState(null);
   const [validation, setValidation] = useState(null);
@@ -171,6 +172,7 @@ function AppContent() {
         referenceBounds: effectiveReferencingConfig.referenceBounds,
         linkedToProton: effectiveReferencingConfig.linkedToProton,
         protonFrequency: effectiveReferencingConfig.protonFrequency,
+        shiftUncertainties: Object.keys(shiftUncertainties).length > 0 ? shiftUncertainties : undefined,
         initialPH: 7.0,
         useGridSearch: true
       };
@@ -234,6 +236,7 @@ function AppContent() {
     database,
     selectedBuffers,
     observedShifts,
+    shiftUncertainties,
     temperature,
     ionicStrength,
     refineTemperature,
@@ -272,6 +275,7 @@ function AppContent() {
   }, [
     canCalculate,
     observedShifts,
+    shiftUncertainties,
     temperature,
     ionicStrength,
     refineTemperature,
@@ -331,6 +335,14 @@ function AppContent() {
     setObservedShifts(prev => ({
       ...prev,
       [nucleus]: shifts
+    }));
+  }, []);
+
+  // Handle shift uncertainty change
+  const handleShiftUncertaintyChange = useCallback((nucleus, uncertainty) => {
+    setShiftUncertainties(prev => ({
+      ...prev,
+      [nucleus]: uncertainty
     }));
   }, []);
 
@@ -413,6 +425,8 @@ function AppContent() {
               ionicStrength={ionicStrength}
               observedShifts={observedShifts}
               onShiftsChange={handleShiftsChange}
+              shiftUncertainties={shiftUncertainties}
+              onShiftUncertaintyChange={handleShiftUncertaintyChange}
               spectrometerFreqs={spectrometerFreqs}
               onSpectrometerFreqChange={handleSpectrometerFreqChange}
               showFrequencyInputs={showFrequencyInputs}
