@@ -445,6 +445,7 @@ export function predictShiftWithUncertainty(
 
 /**
  * Generate chemical shift vs pH curve data for plotting.
+ * Includes uncertainty bands and applies reference offset.
  *
  * @param {Object} buffer - Buffer object from database
  * @param {string} nucleus - Nucleus type (e.g., '1H', '19F')
@@ -454,7 +455,8 @@ export function predictShiftWithUncertainty(
  * @param {number} pHMin - Minimum pH for curve
  * @param {number} pHMax - Maximum pH for curve
  * @param {number} pHStep - pH step size
- * @returns {Array<Object>} Array of curve data objects
+ * @param {number} referenceOffset - Reference offset to subtract from shifts (ppm)
+ * @returns {Array<Object>} Array of curve data objects with shifts, uncertainties
  */
 export function generateShiftCurves(
   buffer,
@@ -464,7 +466,8 @@ export function generateShiftCurves(
   sample,
   pHMin = 2,
   pHMax = 12,
-  pHStep = 0.05
+  pHStep = 0.05,
+  referenceOffset = 0
 ) {
   const refTemp = sample?.reference_temperature_K ?? 298.15;
   const refIonic = sample?.reference_ionic_strength_M ?? 0;
@@ -477,12 +480,16 @@ export function generateShiftCurves(
   for (const resonance of resonances) {
     const pHValues = [];
     const shifts = [];
+    const uncertainties = [];
 
     for (let pH = pHMin; pH <= pHMax; pH += pHStep) {
       pHValues.push(pH);
-      shifts.push(
-        predictShift(resonance, pKaValues, pH, temperature, ionicStrength, refTemp, refIonic)
+      const { shift, uncertainty } = predictShiftWithUncertainty(
+        resonance, buffer, pKaValues, pH, temperature, ionicStrength, refTemp, refIonic
       );
+      // Subtract reference offset from buffer (reference) data
+      shifts.push(shift - referenceOffset);
+      uncertainties.push(uncertainty);
     }
 
     curves.push({
@@ -492,7 +499,11 @@ export function generateShiftCurves(
       description: resonance.description,
       nucleus,
       pHValues,
-      shifts
+      shifts,
+      uncertainties,
+      // Pre-compute upper and lower bounds for plotting
+      shiftsUpper: shifts.map((s, idx) => s + uncertainties[idx]),
+      shiftsLower: shifts.map((s, idx) => s - uncertainties[idx])
     });
   }
 

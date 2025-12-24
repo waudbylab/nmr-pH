@@ -419,6 +419,7 @@ function AppContent() {
               fittedPH={result?.success ? result.parameters.pH.value : null}
               phUncertainty={result?.success ? result.parameters.pH.uncertainty : null}
               assignments={result?.success ? result.assignments : null}
+              referenceOffsets={fittedReferenceOffsets ?? effectiveReferencingConfig?.referenceOffsets ?? {}}
             />
           </section>
         )}

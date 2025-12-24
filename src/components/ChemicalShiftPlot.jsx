@@ -3,12 +3,22 @@ import Plot from 'react-plotly.js';
 import { generateShiftCurves } from '../numerical/bufferModel';
 
 /**
- * Color palette for buffers.
+ * Color palette for buffers (as hex colors).
  */
 const BUFFER_COLORS = [
   '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
   '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
 ];
+
+/**
+ * Convert hex color to rgba with given alpha.
+ */
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 /**
  * Get color for a buffer based on index.
@@ -41,7 +51,9 @@ export function ChemicalShiftPlot({
   phUncertainty = null,
   assignments = null,
   pHRange = [2, 12],
-  height = 600 // 50% taller than original 400
+  height = 600, // 50% taller than original 400
+  referenceOffset = 0, // Reference offset to subtract from buffer data
+  showUncertaintyBands = true // Whether to show uncertainty bands on curves
 }) {
   // Generate curve data for all selected buffers
   const curveData = useMemo(() => {
@@ -57,7 +69,8 @@ export function ChemicalShiftPlot({
         sample,
         pHRange[0],
         pHRange[1],
-        0.05
+        0.05,
+        referenceOffset // Pass reference offset to subtract from buffer data
       );
 
       curves.forEach(curve => {
@@ -69,11 +82,36 @@ export function ChemicalShiftPlot({
     });
 
     return allCurves;
-  }, [buffers, samplesMap, nucleus, temperature, ionicStrength, pHRange]);
+  }, [buffers, samplesMap, nucleus, temperature, ionicStrength, pHRange, referenceOffset]);
 
   // Build Plotly traces
   const traces = useMemo(() => {
     const plotTraces = [];
+
+    // Add uncertainty bands first (so they appear behind curves)
+    if (showUncertaintyBands) {
+      curveData.forEach((curve) => {
+        // Check if uncertainties are non-zero
+        const hasUncertainty = curve.uncertainties && curve.uncertainties.some(u => u > 0);
+        if (hasUncertainty) {
+          // Create a filled region between upper and lower bounds
+          // Plotly fill='tonexty' requires going forward then backward
+          const xFill = [...curve.shiftsUpper, ...curve.shiftsLower.slice().reverse()];
+          const yFill = [...curve.pHValues, ...curve.pHValues.slice().reverse()];
+
+          plotTraces.push({
+            x: xFill,
+            y: yFill,
+            type: 'scatter',
+            fill: 'toself',
+            fillcolor: hexToRgba(curve.color, 0.15),
+            line: { color: 'transparent' },
+            showlegend: false,
+            hoverinfo: 'skip'
+          });
+        }
+      });
+    }
 
     // Add buffer curves
     curveData.forEach((curve, i) => {
@@ -191,7 +229,7 @@ export function ChemicalShiftPlot({
     }
 
     return plotTraces;
-  }, [curveData, observedShifts, fittedPH, phUncertainty, assignments, pHRange]);
+  }, [curveData, observedShifts, fittedPH, phUncertainty, assignments, pHRange, showUncertaintyBands]);
 
   // Layout configuration with legend below and axis labels
   const layout = useMemo(() => ({
