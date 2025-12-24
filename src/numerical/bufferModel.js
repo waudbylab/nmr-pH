@@ -196,12 +196,12 @@ export function ionisationFractions(pH, pKaValues) {
   }
 
   // Calculate relative populations using cumulative products
-  // For state i: relative population = product of 10^(pKa_j - pH) for j > i
+  // For state idx: relative population = product of 10^(pKa_k - pH) for k > idx
   const relatives = new Array(n).fill(1);
 
-  for (let i = 0; i < n; i++) {
-    for (let j = i; j < pKaValues.length; j++) {
-      relatives[i] *= Math.pow(10, pKaValues[j] - pH);
+  for (let stateIdx = 0; stateIdx < n; stateIdx++) {
+    for (let pKaIdx = stateIdx; pKaIdx < pKaValues.length; pKaIdx++) {
+      relatives[stateIdx] *= Math.pow(10, pKaValues[pKaIdx] - pH);
     }
   }
 
@@ -330,6 +330,117 @@ export function predictBufferShifts(buffer, pH, temperature, ionicStrength, samp
   }
 
   return predictions;
+}
+
+/**
+ * Calculate derivative of shift with respect to pH (for uncertainty propagation).
+ * Uses numerical differentiation.
+ *
+ * @param {Object} resonance - Resonance object from database
+ * @param {Array<number>} pKaValues - Corrected pKa values
+ * @param {number} pH - The pH value
+ * @param {number} temperature - Temperature (K)
+ * @param {number} ionicStrength - Ionic strength (M)
+ * @param {number} referenceTemperature - Reference temperature (K)
+ * @param {number} referenceIonicStrength - Reference ionic strength (M)
+ * @returns {number} dδ/dpH
+ */
+function dShiftDpH(resonance, pKaValues, pH, temperature, ionicStrength, refTemp, refIonic) {
+  const delta = 0.001;
+  const shiftPlus = predictShift(resonance, pKaValues, pH + delta, temperature, ionicStrength, refTemp, refIonic);
+  const shiftMinus = predictShift(resonance, pKaValues, pH - delta, temperature, ionicStrength, refTemp, refIonic);
+  return (shiftPlus - shiftMinus) / (2 * delta);
+}
+
+/**
+ * Predict chemical shift with uncertainty propagation from database parameters.
+ *
+ * Propagates uncertainties from:
+ * - pKa values
+ * - Limiting shifts
+ * - Temperature coefficients
+ * - Ionic strength coefficients
+ *
+ * Uses linear error propagation: σ² = Σ(∂f/∂x_i)² × σ²_xi
+ *
+ * @param {Object} resonance - Resonance object from database
+ * @param {Object} buffer - Buffer object (for pKa uncertainties)
+ * @param {Array<number>} pKaValues - Corrected pKa values at current conditions
+ * @param {number} pH - The pH value
+ * @param {number} temperature - Temperature (K)
+ * @param {number} ionicStrength - Ionic strength (M)
+ * @param {number} referenceTemperature - Reference temperature (K)
+ * @param {number} referenceIonicStrength - Reference ionic strength (M)
+ * @returns {Object} { shift, uncertainty }
+ */
+export function predictShiftWithUncertainty(
+  resonance,
+  buffer,
+  pKaValues,
+  pH,
+  temperature,
+  ionicStrength,
+  referenceTemperature = 298.15,
+  referenceIonicStrength = 0
+) {
+  const shift = predictShift(
+    resonance, pKaValues, pH, temperature, ionicStrength,
+    referenceTemperature, referenceIonicStrength
+  );
+
+  const fractions = ionisationFractions(pH, pKaValues);
+  let varianceTotal = 0;
+
+  // 1. Uncertainty from limiting shifts
+  for (const limitingShift of resonance.limiting_shifts) {
+    const stateIndex = limitingShift.ionisation_state;
+    const fraction = fractions[stateIndex] ?? 0;
+
+    // Uncertainty in the shift value itself
+    const shiftUncertainty = getUncertainty(limitingShift.shift_ppm);
+    varianceTotal += (fraction * shiftUncertainty) ** 2;
+
+    // Uncertainty from temperature coefficient (if temperature differs from reference)
+    const tempCoeffUncertainty = getUncertainty(limitingShift.temperature_coefficient_ppm_per_K ?? 0);
+    const tempDiff = temperature - referenceTemperature;
+    varianceTotal += (fraction * tempCoeffUncertainty * tempDiff) ** 2;
+
+    // Uncertainty from ionic strength coefficient
+    const ionicCoeffUncertainty = getUncertainty(limitingShift.ionic_strength_coefficient_ppm_per_M ?? 0);
+    const ionicDiff = ionicStrength - referenceIonicStrength;
+    varianceTotal += (fraction * ionicCoeffUncertainty * ionicDiff) ** 2;
+  }
+
+  // 2. Uncertainty from pKa values (affects fractions)
+  // Use numerical differentiation to get sensitivity to each pKa
+  for (let pKaIdx = 0; pKaIdx < buffer.pKa_parameters.length; pKaIdx++) {
+    const pKaUncertainty = getUncertainty(buffer.pKa_parameters[pKaIdx].pKa);
+    if (pKaUncertainty > 0) {
+      // Approximate dShift/dpKa by shifting the pKa
+      const delta = 0.01;
+      const pKaValuesPlus = [...pKaValues];
+      const pKaValuesMinus = [...pKaValues];
+      pKaValuesPlus[pKaIdx] += delta;
+      pKaValuesMinus[pKaIdx] -= delta;
+
+      const shiftPlus = predictShift(
+        resonance, pKaValuesPlus, pH, temperature, ionicStrength,
+        referenceTemperature, referenceIonicStrength
+      );
+      const shiftMinus = predictShift(
+        resonance, pKaValuesMinus, pH, temperature, ionicStrength,
+        referenceTemperature, referenceIonicStrength
+      );
+
+      const dShiftDpKa = (shiftPlus - shiftMinus) / (2 * delta);
+      varianceTotal += (dShiftDpKa * pKaUncertainty) ** 2;
+    }
+  }
+
+  return {
+    shift,
+    uncertainty: Math.sqrt(varianceTotal)
+  };
 }
 
 /**

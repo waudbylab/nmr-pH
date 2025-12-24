@@ -1,15 +1,26 @@
 /**
  * Fitting Module
  *
- * Nonlinear least-squares fitting using Levenberg-Marquardt algorithm.
+ * Nonlinear least-squares fitting using Nelder-Mead simplex optimization.
  * Estimates pH, temperature, ionic strength, and reference offsets from chemical shifts.
- * Includes grid search for initial parameter estimation.
+ * Uses proper χ² formulation with combined observed and predicted uncertainties.
  */
 
-import { levenbergMarquardt } from 'ml-levenberg-marquardt';
-import { predictBufferShifts, getBufferPKaValues, predictShift } from './bufferModel.js';
+import { nelderMead } from './nelderMead.js';
+import { predictShift, getBufferPKaValues, predictShiftWithUncertainty } from './bufferModel.js';
 import { assignPeaks, getAssignedPeaksForFitting } from './peakAssignment.js';
-import { calculateParameterUncertainties } from './uncertainty.js';
+
+/**
+ * Default observed shift uncertainties per nucleus (ppm).
+ * These represent typical experimental precision.
+ */
+export const DEFAULT_SHIFT_UNCERTAINTIES = {
+  '1H': 0.01,
+  '13C': 0.1,
+  '15N': 0.1,
+  '19F': 0.05,
+  '31P': 0.1
+};
 
 /**
  * Updated IUPAC Xi ratios from BMRB/Iowa State.
@@ -31,7 +42,6 @@ const XI_RATIOS = {
  * @returns {number} Initial guess for 1H reference offset (ppm)
  */
 export function calculateWaterReference(temperature) {
-  // Temperature-dependent water shift formula: T/96.9 - 3.13
   return temperature / 96.9 - 3.13;
 }
 
@@ -47,16 +57,9 @@ function calculateLinkedOffset(nucleus, protonFrequencyMHz, protonOffsetPpm) {
 
   if (!xiX) return 0;
 
-  // Calculate DSS frequency for 1H
   const nuDSS_H = protonFrequencyMHz * (1 - protonOffsetPpm / 1e6);
-
-  // Calculate true zero frequency for X
   const nu0_X = nuDSS_H * (xiX / xiH);
-
-  // Calculate bf(X)
   const bfX = protonFrequencyMHz * (xiX / xiH);
-
-  // Calculate X reference offset
   const deltaRef_X = ((bfX - nu0_X) / bfX) * 1e6;
 
   return deltaRef_X;
@@ -68,22 +71,30 @@ function calculateLinkedOffset(nucleus, protonFrequencyMHz, protonOffsetPpm) {
 const DEFAULT_OPTIONS = {
   refineTemperature: false,
   refineIonicStrength: false,
-  refineReferences: {}, // { nucleus: boolean }
-  referenceBounds: {}, // { nucleus: { min, max } }
-  linkedToProton: [], // nuclei whose reference is linked to 1H via spectrometer frequency
-  protonFrequency: null, // spectrometer 1H frequency in MHz
-  maxIterations: 100,
+  refineReferences: {},
+  referenceBounds: {},
+  linkedToProton: [],
+  protonFrequency: null,
+  maxIterations: 500,
   tolerance: 1e-8,
   initialPH: 7.0,
-  useGridSearch: true // Enable grid search for initial parameters
+  useGridSearch: true,
+  shiftUncertainties: DEFAULT_SHIFT_UNCERTAINTIES
+};
+
+/**
+ * Parameter bounds for optimization.
+ */
+const PARAM_BOUNDS = {
+  pH: { min: 0, max: 14 },
+  temperature: { min: 273, max: 373 },
+  ionicStrength: { min: 0, max: 1 },
+  refDefault1H: { min: -1, max: 1 },
+  refDefaultHetero: { min: -10, max: 10 }
 };
 
 /**
  * Build parameter vector from conditions.
- *
- * @param {Object} conditions - Current conditions
- * @param {Object} options - Fitting options
- * @returns {Object} { params: Array, parameterMap: Object }
  */
 export function buildParameterVector(conditions, options) {
   const params = [conditions.pH];
@@ -105,7 +116,6 @@ export function buildParameterVector(conditions, options) {
     index++;
   }
 
-  // Reference offsets per nucleus
   for (const [nucleus, refine] of Object.entries(options.refineReferences)) {
     if (refine) {
       params.push(conditions.referenceOffsets?.[nucleus] ?? 0);
@@ -119,12 +129,6 @@ export function buildParameterVector(conditions, options) {
 
 /**
  * Extract conditions from parameter vector.
- *
- * @param {Array<number>} params - Parameter vector
- * @param {Object} parameterMap - Map of parameter names to indices
- * @param {Object} baseConditions - Base conditions for fixed parameters
- * @param {Object} options - Fitting options (for linked references)
- * @returns {Object} Conditions object
  */
 export function extractConditions(params, parameterMap, baseConditions, options = {}) {
   const conditions = {
@@ -138,7 +142,6 @@ export function extractConditions(params, parameterMap, baseConditions, options 
     referenceOffsets: { ...baseConditions.referenceOffsets }
   };
 
-  // Extract fitted reference offsets
   for (const [key, mapping] of Object.entries(parameterMap)) {
     if (key.startsWith('ref_')) {
       const nucleus = key.slice(4);
@@ -146,7 +149,6 @@ export function extractConditions(params, parameterMap, baseConditions, options 
     }
   }
 
-  // Calculate linked reference offsets (scenario 3)
   if (options.linkedToProton && options.linkedToProton.length > 0 && options.protonFrequency) {
     const protonOffset = conditions.referenceOffsets['1H'] ?? 0;
     for (const nucleus of options.linkedToProton) {
@@ -162,87 +164,130 @@ export function extractConditions(params, parameterMap, baseConditions, options 
 }
 
 /**
- * Calculate sum of squared residuals for given parameters.
- * Used for grid search optimization.
- *
- * @param {Array<number>} params - Parameter vector
- * @param {Object} parameterMap - Map of parameter names to indices
- * @param {Object} observedShifts - Observed chemical shifts per nucleus
- * @param {Array<Object>} buffers - Selected buffers
- * @param {Map<string, Object>} samplesMap - Sample objects
- * @param {Object} baseConditions - Base conditions
- * @param {Object} options - Fitting options
- * @returns {number} Sum of squared residuals
+ * Get bounds for a parameter.
  */
-function calculateSSR(params, parameterMap, observedShifts, buffers, samplesMap, baseConditions, options) {
-  const conditions = extractConditions(params, parameterMap, baseConditions, options);
-  let ssr = 0;
+function getParameterBounds(paramKey, options, initialValue) {
+  if (paramKey === 'pH') return PARAM_BOUNDS.pH;
+  if (paramKey === 'temperature') return PARAM_BOUNDS.temperature;
+  if (paramKey === 'ionicStrength') return PARAM_BOUNDS.ionicStrength;
 
-  // For each nucleus with observed shifts
-  for (const [nucleus, shifts] of Object.entries(observedShifts)) {
-    if (!shifts || shifts.length === 0) continue;
-
-    const refOffset = conditions.referenceOffsets[nucleus] ?? 0;
-
-    // Collect all predicted shifts for this nucleus from all buffers
-    const predictedShifts = [];
-    for (const buffer of buffers) {
-      const resonances = buffer.chemical_shifts[nucleus];
-      if (!resonances) continue;
-
-      const sample = samplesMap.get(buffer.sample_id);
-      const refTemp = sample?.reference_temperature_K ?? 298.15;
-      const refIonic = sample?.reference_ionic_strength_M ?? 0;
-      const pKaValues = getBufferPKaValues(buffer, conditions.temperature, conditions.ionicStrength, refTemp);
-
-      for (const resonance of resonances) {
-        const predicted = predictShift(
-          resonance,
-          pKaValues,
-          conditions.pH,
-          conditions.temperature,
-          conditions.ionicStrength,
-          refTemp,
-          refIonic
-        );
-        // Apply reference offset to predicted shift
-        predictedShifts.push(predicted + refOffset);
-      }
-    }
-
-    // For each observed shift, find closest predicted and accumulate residual
-    for (const observed of shifts) {
-      if (predictedShifts.length === 0) continue;
-
-      // Find closest predicted shift
-      let minDist = Infinity;
-      for (const predicted of predictedShifts) {
-        const dist = Math.abs(observed - predicted);
-        if (dist < minDist) {
-          minDist = dist;
-        }
-      }
-      ssr += minDist * minDist;
-    }
+  if (paramKey.startsWith('ref_')) {
+    const nucleus = paramKey.slice(4);
+    const customBounds = options.referenceBounds?.[nucleus];
+    if (customBounds) return customBounds;
+    return nucleus === '1H' ? PARAM_BOUNDS.refDefault1H : PARAM_BOUNDS.refDefaultHetero;
   }
 
-  return ssr;
+  return { min: -100, max: 100 };
+}
+
+/**
+ * Transform parameters from unbounded to bounded space.
+ * Uses logit transform: x_bounded = min + (max-min) * sigmoid(x_unbounded)
+ */
+function transformToBounded(unboundedParams, parameterMap, options, initialParams) {
+  const result = [];
+  for (let idx = 0; idx < unboundedParams.length; idx++) {
+    const val = unboundedParams[idx];
+    const key = Object.keys(parameterMap).find(k => parameterMap[k].index === idx);
+    const bounds = getParameterBounds(key, options, initialParams[idx]);
+    const sigmoid = 1 / (1 + Math.exp(-val));
+    result.push(bounds.min + (bounds.max - bounds.min) * sigmoid);
+  }
+  return result;
+}
+
+/**
+ * Transform parameters from bounded to unbounded space.
+ * Uses inverse logit (logit): x_unbounded = log((x - min) / (max - x))
+ */
+function transformToUnbounded(boundedParams, parameterMap, options, initialParams) {
+  const result = [];
+  for (let idx = 0; idx < boundedParams.length; idx++) {
+    const val = boundedParams[idx];
+    const key = Object.keys(parameterMap).find(k => parameterMap[k].index === idx);
+    const bounds = getParameterBounds(key, options, initialParams[idx]);
+    // Clamp to avoid infinities
+    const clamped = Math.max(bounds.min + 1e-10, Math.min(bounds.max - 1e-10, val));
+    const normalized = (clamped - bounds.min) / (bounds.max - bounds.min);
+    result.push(Math.log(normalized / (1 - normalized)));
+  }
+  return result;
+}
+
+/**
+ * Wrapper to call predictShiftWithUncertainty from bufferModel.
+ * Passes the buffer object needed for pKa uncertainties.
+ */
+function getPredictedShiftWithUncertainty(resonance, buffer, pKaValues, pH, temperature, ionicStrength, refTemp, refIonic) {
+  return predictShiftWithUncertainty(
+    resonance, buffer, pKaValues, pH, temperature, ionicStrength, refTemp, refIonic
+  );
+}
+
+/**
+ * Calculate χ² for given parameters.
+ * χ² = Σ[(δ_obs - δ_pred)² / (σ_obs² + σ_pred²)]
+ */
+function calculateChiSquared(
+  params,
+  parameterMap,
+  assignedPeaks,
+  buffersMap,
+  samplesMap,
+  baseConditions,
+  options
+) {
+  const conditions = extractConditions(params, parameterMap, baseConditions, options);
+  let chiSq = 0;
+
+  for (const peak of assignedPeaks) {
+    const buffer = buffersMap.get(peak.buffer_id);
+    const sample = samplesMap.get(buffer.sample_id);
+    const resonances = buffer.chemical_shifts[peak.nucleus] ?? [];
+    const resonance = resonances.find(r => r.resonance_id === peak.resonance_id);
+
+    if (!resonance) continue;
+
+    const refTemp = sample?.reference_temperature_K ?? 298.15;
+    const refIonic = sample?.reference_ionic_strength_M ?? 0;
+    const pKaValues = getBufferPKaValues(buffer, conditions.temperature, conditions.ionicStrength, refTemp);
+
+    const { shift: predictedShift, uncertainty: sigmaPred } = getPredictedShiftWithUncertainty(
+      resonance,
+      buffer,
+      pKaValues,
+      conditions.pH,
+      conditions.temperature,
+      conditions.ionicStrength,
+      refTemp,
+      refIonic
+    );
+
+    // Apply reference offset
+    const refOffset = conditions.referenceOffsets[peak.nucleus] ?? 0;
+    const totalPredicted = predictedShift + refOffset;
+
+    // Get observed uncertainty
+    const sigmaObs = options.shiftUncertainties?.[peak.nucleus] ?? DEFAULT_SHIFT_UNCERTAINTIES[peak.nucleus] ?? 0.01;
+
+    // Combined variance
+    const sigmaTotal = Math.sqrt(sigmaObs * sigmaObs + sigmaPred * sigmaPred);
+
+    // Residual as z-score
+    const residual = peak.observed_shift - totalPredicted;
+    const zScore = residual / sigmaTotal;
+
+    chiSq += zScore * zScore;
+  }
+
+  return chiSq;
 }
 
 /**
  * Perform grid search to find initial parameter estimates.
- * Fixes temperature and ionic strength at nominal values.
- *
- * @param {Object} observedShifts - Observed chemical shifts per nucleus
- * @param {Array<Object>} buffers - Selected buffers
- * @param {Map<string, Object>} samplesMap - Sample objects
- * @param {Object} baseConditions - Base conditions
- * @param {Object} options - Fitting options
- * @returns {Object} Best parameters found { params, ssr }
  */
 export function gridSearchInitialParameters(observedShifts, buffers, samplesMap, baseConditions, options) {
-  // Build parameter map for the grid search (pH + reference offsets only)
-  // Temperature and ionic strength are fixed during grid search
   const gridOptions = {
     ...options,
     refineTemperature: false,
@@ -251,72 +296,101 @@ export function gridSearchInitialParameters(observedShifts, buffers, samplesMap,
 
   const { parameterMap } = buildParameterVector({ ...baseConditions, pH: 7 }, gridOptions);
 
-  // Determine which reference offsets need fitting
   const refNuclei = Object.entries(options.refineReferences)
     .filter(([_, refine]) => refine)
     .map(([nucleus]) => nucleus);
 
-  // Grid parameters
+  // Collect all resonances for SSR calculation
+  const buffersMap = new Map(buffers.map(b => [b.buffer_id, b]));
+
   const pHStep = 0.2;
   const pHMin = 0;
   const pHMax = 14;
 
   let bestParams = null;
-  let bestSSR = Infinity;
+  let bestChiSq = Infinity;
 
-  // Determine grid strategy based on what needs fitting
+  // Simple SSR-based grid search (not full χ² yet, for speed)
+  const calculateSSR = (pH, refOffsets) => {
+    const testConditions = { ...baseConditions, pH, referenceOffsets: { ...baseConditions.referenceOffsets, ...refOffsets } };
+    let ssr = 0;
+
+    for (const [nucleus, shifts] of Object.entries(observedShifts)) {
+      if (!shifts || shifts.length === 0) continue;
+
+      const refOffset = testConditions.referenceOffsets[nucleus] ?? 0;
+      const predictedShifts = [];
+
+      for (const buffer of buffers) {
+        const resonances = buffer.chemical_shifts[nucleus];
+        if (!resonances) continue;
+
+        const sample = samplesMap.get(buffer.sample_id);
+        const refTemp = sample?.reference_temperature_K ?? 298.15;
+        const refIonic = sample?.reference_ionic_strength_M ?? 0;
+        const pKaValues = getBufferPKaValues(buffer, testConditions.temperature, testConditions.ionicStrength, refTemp);
+
+        for (const resonance of resonances) {
+          const predicted = predictShift(resonance, pKaValues, pH, testConditions.temperature, testConditions.ionicStrength, refTemp, refIonic);
+          predictedShifts.push(predicted + refOffset);
+        }
+      }
+
+      for (const observed of shifts) {
+        if (predictedShifts.length === 0) continue;
+        let minDist = Infinity;
+        for (const predicted of predictedShifts) {
+          const dist = Math.abs(observed - predicted);
+          if (dist < minDist) minDist = dist;
+        }
+        ssr += minDist * minDist;
+      }
+    }
+
+    return ssr;
+  };
+
   if (refNuclei.length === 0) {
-    // Only pH to search - simple 1D grid
     for (let pH = pHMin; pH <= pHMax; pH += pHStep) {
-      const params = [pH];
-      const ssr = calculateSSR(params, parameterMap, observedShifts, buffers, samplesMap, baseConditions, gridOptions);
-      if (ssr < bestSSR) {
-        bestSSR = ssr;
-        bestParams = [...params];
+      const ssr = calculateSSR(pH, {});
+      if (ssr < bestChiSq) {
+        bestChiSq = ssr;
+        bestParams = [pH];
       }
     }
   } else if (refNuclei.length === 1 && refNuclei[0] === '1H') {
-    // pH + 1H reference - 2D grid
     const h1Bounds = options.referenceBounds?.['1H'] || { min: -0.5, max: 0.5 };
     const h1Step = 0.05;
 
     for (let pH = pHMin; pH <= pHMax; pH += pHStep) {
       for (let h1Ref = h1Bounds.min; h1Ref <= h1Bounds.max; h1Ref += h1Step) {
-        const params = [pH, h1Ref];
-        const testConditions = { ...baseConditions, referenceOffsets: { ...baseConditions.referenceOffsets, '1H': h1Ref } };
-        const ssr = calculateSSR(params, parameterMap, observedShifts, buffers, samplesMap, testConditions, gridOptions);
-        if (ssr < bestSSR) {
-          bestSSR = ssr;
-          bestParams = [...params];
+        const ssr = calculateSSR(pH, { '1H': h1Ref });
+        if (ssr < bestChiSq) {
+          bestChiSq = ssr;
+          bestParams = [pH, h1Ref];
         }
       }
     }
   } else {
-    // Multiple reference offsets - do coarse grid for each
-    // This is more complex; we'll do a nested grid but with coarser steps
-
-    // Build initial params array structure
-    const nParams = 1 + refNuclei.length; // pH + ref offsets
-    const paramRanges = [{ min: pHMin, max: pHMax, step: pHStep }]; // pH
+    // Multi-parameter grid search with coarser steps
+    const nParams = 1 + refNuclei.length;
+    const paramRanges = [{ min: pHMin, max: pHMax, step: pHStep }];
 
     for (const nucleus of refNuclei) {
       const bounds = options.referenceBounds?.[nucleus] || (nucleus === '1H' ? { min: -0.5, max: 0.5 } : { min: -5, max: 5 });
-      const step = nucleus === '1H' ? 0.1 : 0.5; // Coarser grid for multi-parameter search
+      const step = nucleus === '1H' ? 0.1 : 1.0;
       paramRanges.push({ min: bounds.min, max: bounds.max, step });
     }
 
-    // Recursive grid search
     function searchGrid(paramIndex, currentParams) {
       if (paramIndex === nParams) {
-        // Evaluate at this point
-        const testConditions = { ...baseConditions };
-        testConditions.referenceOffsets = { ...baseConditions.referenceOffsets };
-        for (let i = 0; i < refNuclei.length; i++) {
-          testConditions.referenceOffsets[refNuclei[i]] = currentParams[i + 1];
+        const refOffsets = {};
+        for (let nucIdx = 0; nucIdx < refNuclei.length; nucIdx++) {
+          refOffsets[refNuclei[nucIdx]] = currentParams[nucIdx + 1];
         }
-        const ssr = calculateSSR(currentParams, parameterMap, observedShifts, buffers, samplesMap, testConditions, gridOptions);
-        if (ssr < bestSSR) {
-          bestSSR = ssr;
+        const ssr = calculateSSR(currentParams[0], refOffsets);
+        if (ssr < bestChiSq) {
+          bestChiSq = ssr;
           bestParams = [...currentParams];
         }
         return;
@@ -332,200 +406,168 @@ export function gridSearchInitialParameters(observedShifts, buffers, samplesMap,
     searchGrid(0, new Array(nParams));
   }
 
-  return { params: bestParams, ssr: bestSSR };
+  return { params: bestParams, chiSq: bestChiSq };
 }
 
 /**
- * Create residual function for fitting.
+ * Compute numerical Hessian of χ² at the minimum.
+ * Uses central finite differences.
  *
- * @param {Array<Object>} assignedPeaks - Assigned peaks for fitting
- * @param {Map<string, Object>} buffersMap - Map of buffer_id to buffer object
- * @param {Map<string, Object>} samplesMap - Map of sample_id to sample object
- * @param {Object} parameterMap - Map of parameter names to indices
- * @param {Object} baseConditions - Base conditions for fixed parameters
- * @param {Object} options - Fitting options
- * @returns {Function} Residual function for optimizer
+ * @returns {Array<Array<number>>} Hessian matrix
  */
-export function createResidualFunction(assignedPeaks, buffersMap, samplesMap, parameterMap, baseConditions, options) {
-  return function(params) {
-    const conditions = extractConditions(params, parameterMap, baseConditions, options);
-    const residuals = [];
+function computeHessian(chiSqFn, params, delta = 1e-5) {
+  const n = params.length;
+  const H = Array(n).fill(null).map(() => Array(n).fill(0));
 
-    for (const peak of assignedPeaks) {
-      const buffer = buffersMap.get(peak.buffer_id);
-      const sample = samplesMap.get(buffer.sample_id);
+  for (let row = 0; row < n; row++) {
+    for (let col = row; col < n; col++) {
+      const p_pp = [...params];
+      const p_pm = [...params];
+      const p_mp = [...params];
+      const p_mm = [...params];
 
-      if (!buffer) {
-        throw new Error(`Buffer not found: ${peak.buffer_id}`);
-      }
+      p_pp[row] += delta; p_pp[col] += delta;
+      p_pm[row] += delta; p_pm[col] -= delta;
+      p_mp[row] -= delta; p_mp[col] += delta;
+      p_mm[row] -= delta; p_mm[col] -= delta;
 
-      // Find the resonance
-      const resonances = buffer.chemical_shifts[peak.nucleus] ?? [];
-      const resonance = resonances.find(r => r.resonance_id === peak.resonance_id);
+      const f_pp = chiSqFn(p_pp);
+      const f_pm = chiSqFn(p_pm);
+      const f_mp = chiSqFn(p_mp);
+      const f_mm = chiSqFn(p_mm);
 
-      if (!resonance) {
-        throw new Error(`Resonance not found: ${peak.resonance_id} in ${peak.buffer_id}`);
-      }
-
-      // Calculate predicted shift
-      const refTemp = sample?.reference_temperature_K ?? 298.15;
-      const refIonic = sample?.reference_ionic_strength_M ?? 0;
-      const pKaValues = getBufferPKaValues(buffer, conditions.temperature, conditions.ionicStrength, refTemp);
-
-      let predictedShift = predictShift(
-        resonance,
-        pKaValues,
-        conditions.pH,
-        conditions.temperature,
-        conditions.ionicStrength,
-        refTemp,
-        refIonic
-      );
-
-      // Apply reference offset if applicable
-      const refOffset = conditions.referenceOffsets[peak.nucleus] ?? 0;
-      predictedShift += refOffset;
-
-      // Residual = observed - predicted
-      residuals.push(peak.observed_shift - predictedShift);
-    }
-
-    return residuals;
-  };
-}
-
-/**
- * Create model function for Levenberg-Marquardt.
- * Returns predicted shifts given parameters.
- *
- * @param {Array<Object>} assignedPeaks - Assigned peaks for fitting
- * @param {Map<string, Object>} buffersMap - Map of buffer_id to buffer object
- * @param {Map<string, Object>} samplesMap - Map of sample_id to sample object
- * @param {Object} parameterMap - Map of parameter names to indices
- * @param {Object} baseConditions - Base conditions for fixed parameters
- * @param {Object} options - Fitting options
- * @returns {Function} Model function
- */
-export function createModelFunction(assignedPeaks, buffersMap, samplesMap, parameterMap, baseConditions, options) {
-  // ml-levenberg-marquardt expects a function that takes (params) and returns array of predicted values
-  // It minimizes the sum of squares of (data - predicted)
-  return function(params) {
-    const conditions = extractConditions(params, parameterMap, baseConditions, options);
-    const predicted = [];
-
-    for (const peak of assignedPeaks) {
-      const buffer = buffersMap.get(peak.buffer_id);
-      const sample = samplesMap.get(buffer.sample_id);
-
-      const resonances = buffer.chemical_shifts[peak.nucleus] ?? [];
-      const resonance = resonances.find(r => r.resonance_id === peak.resonance_id);
-
-      const refTemp = sample?.reference_temperature_K ?? 298.15;
-      const refIonic = sample?.reference_ionic_strength_M ?? 0;
-      const pKaValues = getBufferPKaValues(buffer, conditions.temperature, conditions.ionicStrength, refTemp);
-
-      let predictedShift = predictShift(
-        resonance,
-        pKaValues,
-        conditions.pH,
-        conditions.temperature,
-        conditions.ionicStrength,
-        refTemp,
-        refIonic
-      );
-
-      const refOffset = conditions.referenceOffsets[peak.nucleus] ?? 0;
-      predictedShift += refOffset;
-
-      predicted.push(predictedShift);
-    }
-
-    return predicted;
-  };
-}
-
-/**
- * Build parameter bounds based on options.
- *
- * @param {Array<number>} initialParams - Initial parameter values
- * @param {Object} parameterMap - Parameter mapping
- * @param {Object} options - Fitting options with referenceBounds
- * @returns {Object} { minValues, maxValues }
- */
-function buildParameterBounds(initialParams, parameterMap, options) {
-  const minValues = [];
-  const maxValues = [];
-
-  for (let i = 0; i < initialParams.length; i++) {
-    // pH bounds
-    if (i === parameterMap.pH.index) {
-      minValues.push(0);
-      maxValues.push(14);
-      continue;
-    }
-
-    // Temperature bounds
-    if (parameterMap.temperature && i === parameterMap.temperature.index) {
-      minValues.push(273);
-      maxValues.push(373);
-      continue;
-    }
-
-    // Ionic strength bounds
-    if (parameterMap.ionicStrength && i === parameterMap.ionicStrength.index) {
-      minValues.push(0);
-      maxValues.push(1);
-      continue;
-    }
-
-    // Reference offset bounds - check for custom bounds
-    let foundBounds = false;
-    for (const [key, mapping] of Object.entries(parameterMap)) {
-      if (key.startsWith('ref_') && mapping.index === i) {
-        const nucleus = key.slice(4);
-        const bounds = options.referenceBounds?.[nucleus];
-        if (bounds) {
-          minValues.push(bounds.min);
-          maxValues.push(bounds.max);
-        } else if (nucleus === '1H') {
-          // Default 1H bounds: initial guess ± 0.5
-          const guess = initialParams[i];
-          minValues.push(guess - 0.5);
-          maxValues.push(guess + 0.5);
-        } else {
-          // Default heteronuclear bounds: ±5 ppm
-          minValues.push(-5);
-          maxValues.push(5);
-        }
-        foundBounds = true;
-        break;
-      }
-    }
-
-    if (!foundBounds) {
-      // Fallback
-      minValues.push(-10);
-      maxValues.push(10);
+      H[row][col] = (f_pp - f_pm - f_mp + f_mm) / (4 * delta * delta);
+      H[col][row] = H[row][col]; // Symmetric
     }
   }
 
-  return { minValues, maxValues };
+  return H;
 }
 
 /**
- * Perform nonlinear least-squares fitting to estimate parameters.
- *
- * @param {Object} observedShifts - Object mapping nucleus -> array of observed shifts
- * @param {Array<Object>} buffers - Array of selected buffer objects
- * @param {Map<string, Object>} samplesMap - Map of sample_id to sample object
- * @param {Object} initialConditions - Initial conditions (pH, temperature, ionicStrength)
- * @param {Object} [options] - Fitting options
- * @returns {Object} Fitting results
+ * Invert a matrix using Gaussian elimination with partial pivoting.
+ */
+function invertMatrix(matrix) {
+  const n = matrix.length;
+  // Create augmented matrix [A | I]
+  const aug = [];
+  for (let rowIdx = 0; rowIdx < n; rowIdx++) {
+    const newRow = [...matrix[rowIdx]];
+    for (let colIdx = 0; colIdx < n; colIdx++) {
+      newRow.push(rowIdx === colIdx ? 1 : 0);
+    }
+    aug.push(newRow);
+  }
+
+  for (let col = 0; col < n; col++) {
+    // Find pivot
+    let maxRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) {
+        maxRow = row;
+      }
+    }
+    [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+
+    if (Math.abs(aug[col][col]) < 1e-12) {
+      // Matrix is singular or nearly singular
+      return null;
+    }
+
+    // Scale pivot row
+    const scale = aug[col][col];
+    for (let j = 0; j < 2 * n; j++) {
+      aug[col][j] /= scale;
+    }
+
+    // Eliminate column
+    for (let row = 0; row < n; row++) {
+      if (row !== col) {
+        const factor = aug[row][col];
+        for (let j = 0; j < 2 * n; j++) {
+          aug[row][j] -= factor * aug[col][j];
+        }
+      }
+    }
+  }
+
+  return aug.map(row => row.slice(n));
+}
+
+/**
+ * Calculate parameter uncertainties from Hessian.
+ * Covariance matrix C = 2 * H^(-1) (factor of 2 from χ² definition)
+ * Standard errors are sqrt of diagonal elements.
+ */
+function calculateUncertaintiesFromHessian(H) {
+  const Hinv = invertMatrix(H);
+  if (!Hinv) {
+    return null; // Matrix was singular
+  }
+
+  // Covariance = 2 * H^(-1) for χ² minimization
+  // Standard errors = sqrt(diag(Cov))
+  const uncertainties = [];
+  for (let idx = 0; idx < Hinv.length; idx++) {
+    const variance = 2 * Hinv[idx][idx];
+    uncertainties.push(variance > 0 ? Math.sqrt(variance) : null);
+  }
+  return uncertainties;
+}
+
+/**
+ * Create residual data for each peak (for reporting).
+ */
+function calculateResiduals(params, parameterMap, assignedPeaks, buffersMap, samplesMap, baseConditions, options) {
+  const conditions = extractConditions(params, parameterMap, baseConditions, options);
+  const residuals = [];
+
+  for (const peak of assignedPeaks) {
+    const buffer = buffersMap.get(peak.buffer_id);
+    const sample = samplesMap.get(buffer.sample_id);
+    const resonances = buffer.chemical_shifts[peak.nucleus] ?? [];
+    const resonance = resonances.find(r => r.resonance_id === peak.resonance_id);
+
+    if (!resonance) continue;
+
+    const refTemp = sample?.reference_temperature_K ?? 298.15;
+    const refIonic = sample?.reference_ionic_strength_M ?? 0;
+    const pKaValues = getBufferPKaValues(buffer, conditions.temperature, conditions.ionicStrength, refTemp);
+
+    const { shift: predictedShift, uncertainty: sigmaPred } = getPredictedShiftWithUncertainty(
+      resonance, buffer, pKaValues, conditions.pH, conditions.temperature, conditions.ionicStrength, refTemp, refIonic
+    );
+
+    const refOffset = conditions.referenceOffsets[peak.nucleus] ?? 0;
+    const totalPredicted = predictedShift + refOffset;
+
+    const sigmaObs = options.shiftUncertainties?.[peak.nucleus] ?? DEFAULT_SHIFT_UNCERTAINTIES[peak.nucleus] ?? 0.01;
+    const sigmaTotal = Math.sqrt(sigmaObs * sigmaObs + sigmaPred * sigmaPred);
+
+    const residual = peak.observed_shift - totalPredicted;
+
+    residuals.push({
+      nucleus: peak.nucleus,
+      observed: peak.observed_shift,
+      predicted: totalPredicted,
+      residual,
+      sigmaObs,
+      sigmaPred,
+      sigmaTotal,
+      zScore: residual / sigmaTotal
+    });
+  }
+
+  return residuals;
+}
+
+/**
+ * Perform nonlinear least-squares fitting using Nelder-Mead.
  */
 export function fitParameters(observedShifts, buffers, samplesMap, initialConditions, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  // Initial assignment at initial conditions
+  // Initial assignment
   let assignments = assignPeaks(
     observedShifts,
     buffers,
@@ -545,10 +587,8 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
     };
   }
 
-  // Build maps for quick lookup
   const buffersMap = new Map(buffers.map(b => [b.buffer_id, b]));
 
-  // Build base conditions
   const baseConditions = {
     temperature: initialConditions.temperature,
     ionicStrength: initialConditions.ionicStrength,
@@ -556,42 +596,31 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
     pH: opts.initialPH ?? initialConditions.pH ?? 7.0
   };
 
-  // Optionally run grid search for initial parameters
+  // Grid search for initial parameters
   let initialParams;
   let parameterMap;
 
   if (opts.useGridSearch) {
     const gridResult = gridSearchInitialParameters(observedShifts, buffers, samplesMap, baseConditions, opts);
     if (gridResult.params) {
-      // Update base conditions with grid search results
       const gridConditions = { ...baseConditions, pH: gridResult.params[0] };
 
-      // Extract reference offsets from grid search
       const refNuclei = Object.entries(opts.refineReferences)
         .filter(([_, refine]) => refine)
         .map(([nucleus]) => nucleus);
 
-      for (let i = 0; i < refNuclei.length; i++) {
-        gridConditions.referenceOffsets[refNuclei[i]] = gridResult.params[i + 1];
+      for (let nucIdx = 0; nucIdx < refNuclei.length; nucIdx++) {
+        gridConditions.referenceOffsets[refNuclei[nucIdx]] = gridResult.params[nucIdx + 1];
       }
 
-      // Build parameter vector from grid search result
       const result = buildParameterVector(gridConditions, opts);
       initialParams = result.params;
       parameterMap = result.parameterMap;
 
-      // Re-assign peaks with grid search pH for better starting assignments
-      assignments = assignPeaks(
-        observedShifts,
-        buffers,
-        samplesMap,
-        gridConditions.pH,
-        initialConditions.temperature,
-        initialConditions.ionicStrength
-      );
+      // Re-assign with grid search pH
+      assignments = assignPeaks(observedShifts, buffers, samplesMap, gridConditions.pH, initialConditions.temperature, initialConditions.ionicStrength);
       assignedPeaks = getAssignedPeaksForFitting(assignments);
     } else {
-      // Grid search failed, use default initial params
       const result = buildParameterVector(baseConditions, opts);
       initialParams = result.params;
       parameterMap = result.parameterMap;
@@ -602,7 +631,6 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
     parameterMap = result.parameterMap;
   }
 
-  // Check degrees of freedom
   const nParams = initialParams.length;
   const nObs = assignedPeaks.length;
   const dof = nObs - nParams;
@@ -618,206 +646,65 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
     };
   }
 
-  // Create model function
-  const modelFn = createModelFunction(assignedPeaks, buffersMap, samplesMap, parameterMap, baseConditions, opts);
+  // Create χ² function for optimization
+  const chiSqFn = (params) => calculateChiSquared(
+    params, parameterMap, assignedPeaks, buffersMap, samplesMap, baseConditions, opts
+  );
 
-  // Build parameter bounds using custom bounds
-  const { minValues, maxValues } = buildParameterBounds(initialParams, parameterMap, opts);
+  // Transform to unbounded space for Nelder-Mead
+  const unboundedInitial = transformToUnbounded(initialParams, parameterMap, opts, initialParams);
 
-  let fittedParams;
-  let iterations = 0;
-
-  // Levenberg-Marquardt requires at least 2 data points
-  // For 1 observation, use 1D root-finding to find exact pH intercept
-  if (nObs < 2) {
-    // For a single observation, find the exact pH where predicted shift equals observed shift
-    // Use bisection method for robust 1D root-finding
-    fittedParams = [...initialParams];
-
-    if (nObs === 1) {
-      // Get the single assigned peak
-      const peak = assignedPeaks[0];
-      const buffer = buffersMap.get(peak.buffer_id);
-      const sample = samplesMap.get(buffer.sample_id);
-      const resonances = buffer.chemical_shifts[peak.nucleus] ?? [];
-      const resonance = resonances.find(r => r.resonance_id === peak.resonance_id);
-
-      if (resonance) {
-        const refTemp = sample?.reference_temperature_K ?? 298.15;
-        const refIonic = sample?.reference_ionic_strength_M ?? 0;
-
-        // Function to compute residual (observed - predicted) at given pH
-        const computeResidual = (testPH) => {
-          // Build conditions with test pH
-          const testParams = [...fittedParams];
-          testParams[0] = testPH;
-          const testConditions = extractConditions(testParams, parameterMap, baseConditions, opts);
-
-          const pKaValues = getBufferPKaValues(buffer, testConditions.temperature, testConditions.ionicStrength, refTemp);
-          let predictedShift = predictShift(
-            resonance,
-            pKaValues,
-            testPH,
-            testConditions.temperature,
-            testConditions.ionicStrength,
-            refTemp,
-            refIonic
-          );
-
-          // Apply reference offset
-          const refOffset = testConditions.referenceOffsets[peak.nucleus] ?? 0;
-          predictedShift += refOffset;
-
-          return peak.observed_shift - predictedShift;
-        };
-
-        // Bisection method to find pH where residual is zero
-        let pHLow = 0;
-        let pHHigh = 14;
-        const tolerance = 1e-6;
-        const maxIter = 50;
-
-        let residualLow = computeResidual(pHLow);
-        let residualHigh = computeResidual(pHHigh);
-
-        // Check if solution exists in the range
-        if (residualLow * residualHigh > 0) {
-          // No sign change - solution may not exist or is at an extreme
-          // Fall back to finding minimum residual via golden section search
-          const phi = (1 + Math.sqrt(5)) / 2;
-          let a = pHLow, b = pHHigh;
-          let c = b - (b - a) / phi;
-          let d = a + (b - a) / phi;
-
-          for (let i = 0; i < maxIter; i++) {
-            const fc = Math.abs(computeResidual(c));
-            const fd = Math.abs(computeResidual(d));
-
-            if (fc < fd) {
-              b = d;
-              d = c;
-              c = b - (b - a) / phi;
-            } else {
-              a = c;
-              c = d;
-              d = a + (b - a) / phi;
-            }
-
-            if (Math.abs(b - a) < tolerance) break;
-          }
-
-          fittedParams[0] = (a + b) / 2;
-        } else {
-          // Bisection when there's a sign change
-          for (let i = 0; i < maxIter; i++) {
-            const pHMid = (pHLow + pHHigh) / 2;
-            const residualMid = computeResidual(pHMid);
-
-            if (Math.abs(residualMid) < tolerance || (pHHigh - pHLow) / 2 < tolerance) {
-              fittedParams[0] = pHMid;
-              break;
-            }
-
-            if (residualMid * residualLow < 0) {
-              pHHigh = pHMid;
-              residualHigh = residualMid;
-            } else {
-              pHLow = pHMid;
-              residualLow = residualMid;
-            }
-
-            fittedParams[0] = pHMid;
-          }
-        }
-
-        iterations = maxIter;
-      }
-    }
-  } else {
-    // Prepare data for ml-levenberg-marquardt
-    // x values are just indices (we need them but they're not really used)
-    const xData = assignedPeaks.map((_, i) => i);
-    const yData = assignedPeaks.map(p => p.observed_shift);
-
-    // Wrap model function to match expected signature
-    const wrappedModel = params => (x => modelFn(params)[x]);
-
-    try {
-      // Run Levenberg-Marquardt
-      const result = levenbergMarquardt(
-        { x: xData, y: yData },
-        wrappedModel,
-        {
-          initialValues: initialParams,
-          minValues,
-          maxValues,
-          maxIterations: opts.maxIterations,
-          errorTolerance: opts.tolerance,
-          damping: 1.5,
-          dampingStepUp: 11,
-          dampingStepDown: 9
-        }
-      );
-
-      fittedParams = result.parameterValues;
-      iterations = result.iterations;
-    } catch (error) {
-      return {
-        success: false,
-        error: `Fitting failed: ${error.message}`,
-        assignments
-      };
-    }
-  }
+  // Objective function in unbounded space
+  const objective = (unboundedParams) => {
+    const boundedParams = transformToBounded(unboundedParams, parameterMap, opts, initialParams);
+    return chiSqFn(boundedParams);
+  };
 
   try {
+    // Run Nelder-Mead optimization
+    const result = nelderMead(objective, unboundedInitial);
+
+    // Transform back to bounded space
+    const fittedParams = transformToBounded(result.x, parameterMap, opts, initialParams);
+    const finalChiSq = chiSqFn(fittedParams);
+
+    // Compute Hessian for uncertainties
+    const H = computeHessian(chiSqFn, fittedParams);
+    const uncertainties = calculateUncertaintiesFromHessian(H);
+
     const fittedConditions = extractConditions(fittedParams, parameterMap, baseConditions, opts);
 
-    // Re-assign peaks with fitted conditions
+    // Re-assign with fitted conditions
     const finalAssignments = assignPeaks(
-      observedShifts,
-      buffers,
-      samplesMap,
-      fittedConditions.pH,
-      fittedConditions.temperature,
-      fittedConditions.ionicStrength
+      observedShifts, buffers, samplesMap,
+      fittedConditions.pH, fittedConditions.temperature, fittedConditions.ionicStrength
     );
 
-    // Calculate residuals at final parameters
-    const residualFn = createResidualFunction(assignedPeaks, buffersMap, samplesMap, parameterMap, baseConditions, opts);
-    const residuals = residualFn(fittedParams);
+    // Calculate detailed residuals
+    const residualsData = calculateResiduals(fittedParams, parameterMap, assignedPeaks, buffersMap, samplesMap, baseConditions, opts);
+    const residuals = residualsData.map(r => r.residual);
     const sumSquares = residuals.reduce((sum, r) => sum + r * r, 0);
     const rmsd = Math.sqrt(sumSquares / residuals.length);
+    const reducedChiSq = dof > 0 ? finalChiSq / dof : finalChiSq;
 
-    // Calculate chi-squared (assuming unit variance for now)
-    const chiSquared = sumSquares;
-    const reducedChiSquared = dof > 0 ? chiSquared / dof : chiSquared;
-
-    // Calculate parameter uncertainties
-    const uncertainties = calculateParameterUncertainties(
-      fittedParams,
-      residualFn,
-      reducedChiSquared
-    );
-
-    // Build result object
+    // Build parameter results
     const parameterResults = {};
     for (const [key, mapping] of Object.entries(parameterMap)) {
       parameterResults[key] = {
         value: fittedParams[mapping.index],
-        uncertainty: uncertainties[mapping.index],
+        uncertainty: uncertainties ? uncertainties[mapping.index] : null,
         name: mapping.name
       };
     }
 
-    // Add linked reference offsets to results (calculated, not fitted)
+    // Add linked reference offsets
     if (opts.linkedToProton && opts.linkedToProton.length > 0) {
       const protonOffset = fittedConditions.referenceOffsets['1H'] ?? 0;
       for (const nucleus of opts.linkedToProton) {
         const linkedOffset = calculateLinkedOffset(nucleus, opts.protonFrequency, protonOffset);
         parameterResults[`ref_${nucleus}_linked`] = {
           value: linkedOffset,
-          uncertainty: null, // Derived value, uncertainty would need error propagation
+          uncertainty: null,
           name: `${nucleus} reference offset (linked to ¹H)`,
           isLinked: true
         };
@@ -830,19 +717,19 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
       conditions: fittedConditions,
       assignments: finalAssignments,
       residuals,
+      residualsDetailed: residualsData,
       statistics: {
         nObservations: nObs,
         nParameters: nParams,
         degreesOfFreedom: dof,
         sumSquares,
         rmsd,
-        chiSquared,
-        reducedChiSquared,
-        iterations
+        chiSquared: finalChiSq,
+        reducedChiSquared: reducedChiSq
       },
       convergence: {
-        converged: iterations < opts.maxIterations,
-        iterations
+        converged: true,
+        finalValue: result.fx
       }
     };
   } catch (error) {
@@ -856,15 +743,6 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
 
 /**
  * Perform iterative fitting with reassignment.
- * Fits, reassigns peaks with new conditions, and refits until stable.
- *
- * @param {Object} observedShifts - Object mapping nucleus -> array of observed shifts
- * @param {Array<Object>} buffers - Array of selected buffer objects
- * @param {Map<string, Object>} samplesMap - Map of sample_id to sample object
- * @param {Object} initialConditions - Initial conditions
- * @param {Object} [options] - Fitting options
- * @param {number} [maxRounds=3] - Maximum number of fit-reassign rounds
- * @returns {Object} Final fitting results
  */
 export function fitWithReassignment(
   observedShifts,
@@ -887,15 +765,12 @@ export function fitWithReassignment(
       return result;
     }
 
-    // Check if pH changed significantly (would affect assignments)
     const pHChange = Math.abs(result.conditions.pH - conditions.pH);
 
     if (pHChange < 0.1) {
-      // Assignments unlikely to change, stop iterating
       break;
     }
 
-    // Update conditions for next round
     conditions = result.conditions;
   }
 
