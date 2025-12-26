@@ -149,6 +149,93 @@
       },
       
       "notes": "Example fluorinated buffer with two distinct 19F resonances. F_meta ionic strength dependence only measured for fully protonated state."
+    },
+    {
+      "buffer_id": "waudby_2024_methylphosphonate_10pctD2O",
+      "buffer_name": "Methylphosphonic acid",
+      "buffer_family": "phosphonate",
+      "sample_id": "waudby_2024_comprehensive_10pctD2O",
+      "version": "1.0",
+
+      "ionisation_states": 3,
+
+      "pKa_parameters": [
+        {
+          "pKa_index": 1,
+          "pKa": [2.38, 0.02],
+          "dH_kJ_mol": [-5.2, 0.8],
+          "dCp_J_mol_K": [-80, 15],
+          "protonated_charge": 0,
+          "ion_size_angstrom": 4.0
+        },
+        {
+          "pKa_index": 2,
+          "pKa": [7.74, 0.02],
+          "dH_kJ_mol": [-3.8, 0.6],
+          "dCp_J_mol_K": [-120, 20],
+          "protonated_charge": -1,
+          "ion_size_angstrom": 4.0
+        }
+      ],
+
+      "chemical_shifts": {
+        "1H": [
+          {
+            "resonance_id": "H_methyl",
+            "description": "Methyl protons (P-CH3)",
+            "multiplicity": "doublet",
+            "limiting_shifts": [
+              {
+                "ionisation_state": 0,
+                "shift_ppm": [1.48, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0015, 0.0002],
+                "ionic_strength_coefficient_ppm_per_M": [0.02, 0.01]
+              },
+              {
+                "ionisation_state": 1,
+                "shift_ppm": [1.32, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0018, 0.0002],
+                "ionic_strength_coefficient_ppm_per_M": [0.03, 0.01]
+              },
+              {
+                "ionisation_state": 2,
+                "shift_ppm": [1.18, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0022, 0.0003],
+                "ionic_strength_coefficient_ppm_per_M": [0.05, 0.02]
+              }
+            ]
+          }
+        ],
+        "31P": [
+          {
+            "resonance_id": "P_phosphonate",
+            "description": "Phosphorus signal",
+            "multiplicity": "septet",
+            "limiting_shifts": [
+              {
+                "ionisation_state": 0,
+                "shift_ppm": [28.5, 0.05],
+                "temperature_coefficient_ppm_per_K": [-0.025, 0.002],
+                "ionic_strength_coefficient_ppm_per_M": [0.8, 0.1]
+              },
+              {
+                "ionisation_state": 1,
+                "shift_ppm": [22.4, 0.05],
+                "temperature_coefficient_ppm_per_K": [-0.032, 0.002],
+                "ionic_strength_coefficient_ppm_per_M": [1.2, 0.15]
+              },
+              {
+                "ionisation_state": 2,
+                "shift_ppm": [16.8, 0.05],
+                "temperature_coefficient_ppm_per_K": [-0.040, 0.003],
+                "ionic_strength_coefficient_ppm_per_M": [1.8, 0.2]
+              }
+            ]
+          }
+        ]
+      },
+
+      "notes": "Example phosphonate buffer with 1H and 31P resonances. The 31P shift shows large pH dependence (~12 ppm range)."
     }
   ]
 }
