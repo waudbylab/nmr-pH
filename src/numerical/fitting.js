@@ -569,14 +569,16 @@ function calculateResiduals(params, parameterMap, assignedPeaks, buffersMap, sam
 export function fitParameters(observedShifts, buffers, samplesMap, initialConditions, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  // Initial assignment
+  // Initial assignment (with reference offsets applied to predictions)
   let assignments = assignPeaks(
     observedShifts,
     buffers,
     samplesMap,
     opts.initialPH ?? initialConditions.pH ?? 7.0,
     initialConditions.temperature,
-    initialConditions.ionicStrength
+    initialConditions.ionicStrength,
+    {}, // tolerances
+    initialConditions.referenceOffsets ?? {}
   );
 
   let assignedPeaks = getAssignedPeaksForFitting(assignments);
@@ -619,8 +621,13 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
       initialParams = result.params;
       parameterMap = result.parameterMap;
 
-      // Re-assign with grid search pH
-      assignments = assignPeaks(observedShifts, buffers, samplesMap, gridConditions.pH, initialConditions.temperature, initialConditions.ionicStrength);
+      // Re-assign with grid search pH and reference offsets
+      assignments = assignPeaks(
+        observedShifts, buffers, samplesMap,
+        gridConditions.pH, initialConditions.temperature, initialConditions.ionicStrength,
+        {}, // tolerances
+        gridConditions.referenceOffsets
+      );
       assignedPeaks = getAssignedPeaksForFitting(assignments);
     } else {
       const result = buildParameterVector(baseConditions, opts);
@@ -676,10 +683,12 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
 
     const fittedConditions = extractConditions(fittedParams, parameterMap, baseConditions, opts);
 
-    // Re-assign with fitted conditions
+    // Re-assign with fitted conditions and reference offsets
     const finalAssignments = assignPeaks(
       observedShifts, buffers, samplesMap,
-      fittedConditions.pH, fittedConditions.temperature, fittedConditions.ionicStrength
+      fittedConditions.pH, fittedConditions.temperature, fittedConditions.ionicStrength,
+      {}, // tolerances
+      fittedConditions.referenceOffsets
     );
 
     // Calculate detailed residuals

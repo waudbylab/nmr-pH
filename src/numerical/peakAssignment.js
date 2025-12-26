@@ -56,14 +56,15 @@ export function calculateConfidence(distance, tolerance, nextBestDistance = Infi
  * @param {number} pH - Initial pH estimate
  * @param {number} temperature - Temperature (K)
  * @param {number} ionicStrength - Ionic strength (M)
+ * @param {Object} referenceOffsets - Object mapping nucleus -> reference offset (ppm) to subtract
  * @returns {Object} Object mapping nucleus -> array of predictions
  */
-export function generatePredictions(buffers, samplesMap, pH, temperature, ionicStrength) {
+export function generatePredictions(buffers, samplesMap, pH, temperature, ionicStrength, referenceOffsets = {}) {
   const allPredictions = {};
 
   for (const buffer of buffers) {
     const sample = samplesMap.get(buffer.sample_id);
-    const predictions = predictBufferShifts(buffer, pH, temperature, ionicStrength, sample);
+    const predictions = predictBufferShifts(buffer, pH, temperature, ionicStrength, sample, referenceOffsets);
 
     for (const [nucleus, resonancePredictions] of Object.entries(predictions)) {
       if (!allPredictions[nucleus]) {
@@ -165,6 +166,7 @@ export function assignSingleShift(observedShift, predictions, tolerance) {
  * @param {number} temperature - Temperature (K)
  * @param {number} ionicStrength - Ionic strength (M)
  * @param {Object} [tolerances] - Optional custom tolerances by nucleus
+ * @param {Object} [referenceOffsets] - Optional reference offsets by nucleus (ppm) to subtract from predictions
  * @returns {Object} Assignment results by nucleus
  */
 export function assignPeaks(
@@ -174,10 +176,11 @@ export function assignPeaks(
   pH,
   temperature,
   ionicStrength,
-  tolerances = {}
+  tolerances = {},
+  referenceOffsets = {}
 ) {
-  // Generate all predictions
-  const predictions = generatePredictions(buffers, samplesMap, pH, temperature, ionicStrength);
+  // Generate all predictions (with reference offsets applied)
+  const predictions = generatePredictions(buffers, samplesMap, pH, temperature, ionicStrength, referenceOffsets);
 
   const assignments = {};
   const usedPredictions = new Set();

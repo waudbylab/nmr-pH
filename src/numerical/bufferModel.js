@@ -312,9 +312,10 @@ export function getBufferPKaValues(buffer, temperature, ionicStrength, reference
  * @param {number} temperature - Temperature (K)
  * @param {number} ionicStrength - Ionic strength (M)
  * @param {Object} sample - Sample object for reference conditions
+ * @param {Object} referenceOffsets - Object mapping nucleus -> reference offset (ppm) to subtract
  * @returns {Object} Object mapping nucleus -> array of {resonance_id, shift}
  */
-export function predictBufferShifts(buffer, pH, temperature, ionicStrength, sample) {
+export function predictBufferShifts(buffer, pH, temperature, ionicStrength, sample, referenceOffsets = {}) {
   const refTemp = sample?.reference_temperature_K ?? 298.15;
   const refIonic = sample?.reference_ionic_strength_M ?? 0;
 
@@ -322,10 +323,11 @@ export function predictBufferShifts(buffer, pH, temperature, ionicStrength, samp
   const predictions = {};
 
   for (const [nucleus, resonances] of Object.entries(buffer.chemical_shifts)) {
+    const refOffset = referenceOffsets[nucleus] ?? 0;
     predictions[nucleus] = resonances.map(resonance => ({
       resonance_id: resonance.resonance_id,
       description: resonance.description,
-      shift: predictShift(resonance, pKaValues, pH, temperature, ionicStrength, refTemp, refIonic)
+      shift: predictShift(resonance, pKaValues, pH, temperature, ionicStrength, refTemp, refIonic) - refOffset
     }));
   }
 
