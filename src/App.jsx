@@ -165,9 +165,13 @@ function AppContent() {
     setCalculating(true);
 
     try {
+      // Use effective settings from DoF validation (may disable T/I refinement if insufficient DoF)
+      const effectiveRefineTemp = dofValidation?.effectiveRefineTemperature ?? refineTemperature;
+      const effectiveRefineIonic = dofValidation?.effectiveRefineIonicStrength ?? refineIonicStrength;
+
       const options = {
-        refineTemperature,
-        refineIonicStrength,
+        refineTemperature: effectiveRefineTemp,
+        refineIonicStrength: effectiveRefineIonic,
         refineReferences: effectiveReferencingConfig.refineReferences,
         referenceBounds: effectiveReferencingConfig.referenceBounds,
         linkedToProton: effectiveReferencingConfig.linkedToProton,
@@ -209,6 +213,14 @@ function AppContent() {
         return;
       }
 
+      // Merge DoF validation warnings into the result
+      if (fitResult.success && dofValidation?.warnings?.length > 0) {
+        fitResult.warnings = [
+          ...(dofValidation.warnings || []),
+          ...(fitResult.warnings || [])
+        ];
+      }
+
       setResult(fitResult);
 
       // Validate result
@@ -242,7 +254,8 @@ function AppContent() {
     ionicStrength,
     refineTemperature,
     refineIonicStrength,
-    effectiveReferencingConfig
+    effectiveReferencingConfig,
+    dofValidation
   ]);
 
   // Auto-calculate with debounce when inputs change

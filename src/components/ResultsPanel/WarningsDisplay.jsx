@@ -42,6 +42,11 @@ export function WarningsDisplay({ result, validation }) {
     );
   }
 
+  // Include fitting warnings (e.g., parameters disabled due to insufficient DoF)
+  if (result?.warnings) {
+    warnings.push(...result.warnings);
+  }
+
   if (errors.length === 0 && warnings.length === 0) {
     return null;
   }

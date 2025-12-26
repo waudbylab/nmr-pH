@@ -94,16 +94,23 @@ export function FittedParameters({ result, nominalConditions }) {
           .filter(([key]) => key.startsWith('ref_'))
           .map(([key, param]) => {
             const nucleus = key.slice(4);
+            const isFitted = param.uncertainty > 0;
             return (
-              <div key={key} className="parameter-row">
+              <div key={key} className={`parameter-row ${isFitted ? '' : 'fixed'}`}>
                 <span className="parameter-name">
                   <sup>{nucleus.match(/^\d+/)?.[0]}</sup>
                   {nucleus.replace(/^\d+/, '')} Reference Offset
                 </span>
                 <span className="parameter-value">
-                  {param.value >= 0 ? '+' : ''}{param.value.toFixed(3)} ppm
-                  {param.uncertainty > 0 && (
-                    <span className="uncertainty"> ± {param.uncertainty.toFixed(3)} ppm</span>
+                  {isFitted ? (
+                    <>
+                      {param.value >= 0 ? '+' : ''}{param.value.toFixed(3)} ppm
+                      <span className="uncertainty"> ± {param.uncertainty.toFixed(3)} ppm</span>
+                    </>
+                  ) : (
+                    <>
+                      {param.value >= 0 ? '+' : ''}{param.value.toFixed(3)} ppm (fixed)
+                    </>
                   )}
                 </span>
               </div>

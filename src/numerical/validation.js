@@ -19,17 +19,15 @@
  *   + (1 if refining ionic strength)
  *   (reference offsets are already accounted for in effective_shifts)
  *
- * Validation Rules:
- *   - total_dof >= 1 - minimum to fit pH
- *   - total_dof >= 2 - if refining temperature OR ionic strength
- *   - total_dof >= 3 - if refining BOTH temperature AND ionic strength
+ * If DoF is insufficient, the function will suggest reduced options by
+ * disabling ionic strength first, then temperature, to achieve DoF >= 0.
  *
  * @param {Object} shiftCounts - Object mapping nucleus -> number of observed shifts
  * @param {Object} refineReferences - Object mapping nucleus -> boolean (whether to fit reference)
  * @param {Array<string>} linkedToProton - Nuclei linked to 1H (don't need fitting)
  * @param {boolean} refineTemperature - Whether temperature is being refined
  * @param {boolean} refineIonicStrength - Whether ionic strength is being refined
- * @returns {Object} Validation result
+ * @returns {Object} Validation result with suggested reduced options if needed
  */
 export function validateDegreesOfFreedom(
   shiftCounts,
@@ -79,25 +77,62 @@ export function validateDegreesOfFreedom(
 
   // Determine required DOF
   // 0 DOF is acceptable (exactly determined system)
-  // This applies regardless of which parameters are being refined
   const requiredDof = 0;
 
-  // Validate
-  const valid = totalDof >= requiredDof;
+  // Check if valid with current settings
+  let valid = totalDof >= requiredDof;
   let message = '';
+  const warnings = [];
+
+  // If not valid, try reducing parameters
+  let effectiveRefineTemperature = refineTemperature;
+  let effectiveRefineIonicStrength = refineIonicStrength;
+  let effectiveNFittingParams = nFittingParams;
+  let effectiveTotalDof = totalDof;
 
   if (!valid) {
-    message = `Underdetermined system: need more chemical shifts. Current DOF: ${totalDof}`;
+    // First try: disable ionic strength refinement
+    if (refineIonicStrength) {
+      effectiveRefineIonicStrength = false;
+      effectiveNFittingParams--;
+      effectiveTotalDof = totalEffectiveShifts - effectiveNFittingParams;
+      warnings.push('Ionic strength refinement disabled due to insufficient degrees of freedom');
+
+      if (effectiveTotalDof >= requiredDof) {
+        valid = true;
+      }
+    }
+
+    // Second try: also disable temperature refinement
+    if (!valid && refineTemperature) {
+      effectiveRefineTemperature = false;
+      effectiveNFittingParams--;
+      effectiveTotalDof = totalEffectiveShifts - effectiveNFittingParams;
+      warnings.push('Temperature refinement disabled due to insufficient degrees of freedom');
+
+      if (effectiveTotalDof >= requiredDof) {
+        valid = true;
+      }
+    }
+
+    // Still not valid - truly underdetermined
+    if (!valid) {
+      message = `Underdetermined system: need more chemical shifts. Current DOF: ${effectiveTotalDof}`;
+    }
   }
 
   return {
     valid,
     totalEffectiveShifts,
-    nFittingParams,
-    totalDof,
+    nFittingParams: effectiveNFittingParams,
+    totalDof: effectiveTotalDof,
     requiredDof,
     message,
-    details
+    details,
+    warnings,
+    // Return effective settings for use by caller
+    effectiveRefineTemperature,
+    effectiveRefineIonicStrength
   };
 }
 

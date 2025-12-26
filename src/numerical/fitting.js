@@ -584,7 +584,8 @@ function calculateResiduals(params, parameterMap, assignedPeaks, buffersMap, sam
  * Perform nonlinear least-squares fitting using Nelder-Mead.
  */
 export function fitParameters(observedShifts, buffers, samplesMap, initialConditions, options = {}) {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
+  let opts = { ...DEFAULT_OPTIONS, ...options };
+  const warnings = [];
 
   // Initial assignment (with reference offsets applied to predictions)
   let assignments = assignPeaks(
@@ -616,6 +617,46 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
     referenceOffsets: initialConditions.referenceOffsets ?? {},
     pH: opts.initialPH ?? initialConditions.pH ?? 7.0
   };
+
+  // Count parameters that would be fitted
+  const countParams = (o) => {
+    let count = 1; // pH always fitted
+    if (o.refineTemperature) count++;
+    if (o.refineIonicStrength) count++;
+    for (const refine of Object.values(o.refineReferences ?? {})) {
+      if (refine) count++;
+    }
+    return count;
+  };
+
+  // Check if we have enough degrees of freedom, and reduce parameters if not
+  const nObs = assignedPeaks.length;
+  let nParams = countParams(opts);
+
+  // Disable ionic strength first, then temperature, to ensure DoF >= 0
+  if (nObs - nParams < 0 && opts.refineIonicStrength) {
+    opts = { ...opts, refineIonicStrength: false };
+    nParams = countParams(opts);
+    warnings.push('Ionic strength refinement disabled due to insufficient degrees of freedom');
+  }
+
+  if (nObs - nParams < 0 && opts.refineTemperature) {
+    opts = { ...opts, refineTemperature: false };
+    nParams = countParams(opts);
+    warnings.push('Temperature refinement disabled due to insufficient degrees of freedom');
+  }
+
+  // If still not enough DoF, we cannot proceed (would need to disable reference fitting too)
+  if (nObs - nParams < 0) {
+    return {
+      success: false,
+      error: `Underdetermined system: ${nObs} observations, ${nParams} parameters (DoF = ${nObs - nParams}). Add more chemical shift observations.`,
+      assignments,
+      nObservations: nObs,
+      nParameters: nParams,
+      degreesOfFreedom: nObs - nParams
+    };
+  }
 
   // Grid search for initial parameters
   let initialParams;
@@ -657,20 +698,9 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
     parameterMap = result.parameterMap;
   }
 
-  const nParams = initialParams.length;
-  const nObs = assignedPeaks.length;
+  // Recalculate DoF with actual parameters
+  nParams = initialParams.length;
   const dof = nObs - nParams;
-
-  if (dof < 0) {
-    return {
-      success: false,
-      error: `Underdetermined system: ${nObs} observations, ${nParams} parameters (DoF = ${dof})`,
-      assignments,
-      nObservations: nObs,
-      nParameters: nParams,
-      degreesOfFreedom: dof
-    };
-  }
 
   // Create χ² function for optimization
   const chiSqFn = (params) => calculateChiSquared(
@@ -759,7 +789,8 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
       convergence: {
         converged: true,
         finalValue: result.fx
-      }
+      },
+      warnings: warnings.length > 0 ? warnings : undefined
     };
   } catch (error) {
     return {
