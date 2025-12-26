@@ -119,9 +119,14 @@ export function FittedParameters({ result, nominalConditions }) {
             <span className="stat-label">RMSD</span>
             <span className="stat-value">{statistics.rmsd.toFixed(4)} ppm</span>
           </div>
-          <div className="stat">
+          <div className={`stat ${statistics.reducedChiSquared > 2 ? 'warning' : ''}`}>
             <span className="stat-label">χ² / DoF</span>
-            <span className="stat-value">{statistics.reducedChiSquared.toFixed(3)}</span>
+            <span className="stat-value">
+              {statistics.reducedChiSquared.toFixed(2)}
+              {statistics.reducedChiSquared > 2 && (
+                <span className="chi-warning" title="High reduced chi-square suggests poor fit or underestimated uncertainties">⚠</span>
+              )}
+            </span>
           </div>
           <div className="stat">
             <span className="stat-label">Observations</span>
@@ -136,6 +141,12 @@ export function FittedParameters({ result, nominalConditions }) {
             <span className="stat-value">{statistics.degreesOfFreedom}</span>
           </div>
         </div>
+        {statistics.reducedChiSquared > 2 && (
+          <div className="chi-square-warning">
+            High reduced χ² ({statistics.reducedChiSquared.toFixed(2)}) suggests poor fit quality.
+            Check for outliers or consider if uncertainties are underestimated.
+          </div>
+        )}
       </div>
     </div>
   );

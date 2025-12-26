@@ -1,19 +1,33 @@
 /**
  * AssignmentsTable component.
- * Displays peak assignments in a table format.
+ * Displays peak assignments in a table format with z-scores.
  */
-export function AssignmentsTable({ assignments }) {
+export function AssignmentsTable({ assignments, residualsDetailed }) {
   if (!assignments) {
     return null;
+  }
+
+  // Build lookup map from residualsDetailed for z-scores
+  const zScoreMap = new Map();
+  if (residualsDetailed) {
+    for (const r of residualsDetailed) {
+      // Key by nucleus + observed shift (rounded to match)
+      const key = `${r.nucleus}:${r.observed.toFixed(4)}`;
+      zScoreMap.set(key, r);
+    }
   }
 
   // Flatten assignments into a single array
   const rows = [];
   for (const [nucleus, nucleusAssignments] of Object.entries(assignments)) {
     for (const assignment of nucleusAssignments) {
+      const key = `${nucleus}:${assignment.observed_shift.toFixed(4)}`;
+      const detailedResidual = zScoreMap.get(key);
       rows.push({
         nucleus,
-        ...assignment
+        ...assignment,
+        zScore: detailedResidual?.zScore ?? null,
+        sigmaTotal: detailedResidual?.sigmaTotal ?? null
       });
     }
   }
@@ -21,6 +35,9 @@ export function AssignmentsTable({ assignments }) {
   if (rows.length === 0) {
     return null;
   }
+
+  // Count outliers (|z| > 2)
+  const outlierCount = rows.filter(r => r.zScore !== null && Math.abs(r.zScore) > 2).length;
 
   return (
     <div className="assignments-table">
@@ -34,57 +51,59 @@ export function AssignmentsTable({ assignments }) {
             <th>Assigned To</th>
             <th>Predicted (ppm)</th>
             <th>Residual (ppm)</th>
-            <th>Confidence</th>
+            <th>z-score</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
-            <tr
-              key={index}
-              className={`
-                ${!row.assigned ? 'unassigned' : ''}
-                ${row.confidence === 'low' ? 'low-confidence' : ''}
-                ${row.alternatives?.length > 0 ? 'ambiguous' : ''}
-              `}
-            >
-              <td>
-                <sup>{row.nucleus.match(/^\d+/)?.[0]}</sup>
-                {row.nucleus.replace(/^\d+/, '')}
-              </td>
-              <td>{row.observed_shift.toFixed(3)}</td>
-              <td>
-                {row.assigned ? (
-                  <>
-                    {row.buffer_name}
-                    <br />
-                    <small>{row.resonance_id}</small>
-                  </>
-                ) : (
-                  <span className="unassigned-text">Unassigned</span>
-                )}
-              </td>
-              <td>
-                {row.assigned ? row.predicted_shift.toFixed(3) : '-'}
-              </td>
-              <td className={Math.abs(row.residual) > 0.1 ? 'large-residual' : ''}>
-                {row.assigned ? (
-                  <>
-                    {row.residual >= 0 ? '+' : ''}{row.residual.toFixed(3)}
-                  </>
-                ) : '-'}
-              </td>
-              <td>
-                <span className={`confidence-badge ${row.confidence}`}>
-                  {row.assigned ? row.confidence : '-'}
-                </span>
-                {row.alternatives?.length > 0 && (
-                  <span className="ambiguous-marker" title="Multiple possible matches">
-                    ⚠
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
+          {rows.map((row, index) => {
+            const isOutlier = row.zScore !== null && Math.abs(row.zScore) > 2;
+            return (
+              <tr
+                key={index}
+                className={`
+                  ${!row.assigned ? 'unassigned' : ''}
+                  ${isOutlier ? 'outlier' : ''}
+                `}
+              >
+                <td>
+                  <sup>{row.nucleus.match(/^\d+/)?.[0]}</sup>
+                  {row.nucleus.replace(/^\d+/, '')}
+                </td>
+                <td>{row.observed_shift.toFixed(3)}</td>
+                <td>
+                  {row.assigned ? (
+                    <>
+                      {row.buffer_name}
+                      <br />
+                      <small>{row.resonance_id}</small>
+                    </>
+                  ) : (
+                    <span className="unassigned-text">Unassigned</span>
+                  )}
+                </td>
+                <td>
+                  {row.assigned ? row.predicted_shift.toFixed(3) : '-'}
+                </td>
+                <td>
+                  {row.assigned ? (
+                    <>
+                      {row.residual >= 0 ? '+' : ''}{row.residual.toFixed(3)}
+                    </>
+                  ) : '-'}
+                </td>
+                <td className={isOutlier ? 'outlier-zscore' : ''}>
+                  {row.zScore !== null ? (
+                    <>
+                      {row.zScore >= 0 ? '+' : ''}{row.zScore.toFixed(2)}
+                      {isOutlier && <span className="outlier-warning" title="Large residual">⚠</span>}
+                    </>
+                  ) : (
+                    row.assigned ? '-' : '-'
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -98,9 +117,9 @@ export function AssignmentsTable({ assignments }) {
             {rows.filter(r => !r.assigned).length} unassigned
           </span>
         )}
-        {rows.some(r => r.confidence === 'low') && (
-          <span className="low-confidence-count">
-            {rows.filter(r => r.confidence === 'low').length} low confidence
+        {outlierCount > 0 && (
+          <span className="outlier-count">
+            {outlierCount} outlier{outlierCount > 1 ? 's' : ''} (|z| &gt; 2)
           </span>
         )}
       </div>

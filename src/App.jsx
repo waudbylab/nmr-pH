@@ -172,6 +172,7 @@ function AppContent() {
         referenceBounds: effectiveReferencingConfig.referenceBounds,
         linkedToProton: effectiveReferencingConfig.linkedToProton,
         protonFrequency: effectiveReferencingConfig.protonFrequency,
+        spectrometerFreqs, // Pass all spectrometer frequencies for linked offset calculation
         shiftUncertainties: Object.keys(shiftUncertainties).length > 0 ? shiftUncertainties : undefined,
         initialPH: 7.0,
         useGridSearch: true

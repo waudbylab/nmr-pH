@@ -48,8 +48,14 @@ export function calculateWaterReference(temperature) {
 /**
  * Calculate reference offset for nucleus X from 1H reference offset.
  * Uses spectrometer frequency relationship via Xi ratios.
+ *
+ * @param {string} nucleus - Target nucleus (e.g., '19F')
+ * @param {number} protonFrequencyMHz - 1H spectrometer frequency
+ * @param {number} protonOffsetPpm - 1H reference offset in ppm
+ * @param {number} [nucleusFrequencyMHz] - Actual spectrometer frequency for nucleus X (if provided)
+ * @returns {number} Reference offset for nucleus X in ppm
  */
-function calculateLinkedOffset(nucleus, protonFrequencyMHz, protonOffsetPpm) {
+function calculateLinkedOffset(nucleus, protonFrequencyMHz, protonOffsetPpm, nucleusFrequencyMHz = null) {
   if (nucleus === '1H') return protonOffsetPpm;
 
   const xiX = XI_RATIOS[nucleus];
@@ -57,9 +63,16 @@ function calculateLinkedOffset(nucleus, protonFrequencyMHz, protonOffsetPpm) {
 
   if (!xiX) return 0;
 
+  // Step 1: Calculate DSS frequency for 1H
   const nuDSS_H = protonFrequencyMHz * (1 - protonOffsetPpm / 1e6);
+
+  // Step 2: Calculate true zero frequency for X using Xi ratio
   const nu0_X = nuDSS_H * (xiX / xiH);
-  const bfX = protonFrequencyMHz * (xiX / xiH);
+
+  // Step 3: Use actual spectrometer frequency for X if provided, otherwise derive from Xi ratio
+  const bfX = nucleusFrequencyMHz || (protonFrequencyMHz * (xiX / xiH));
+
+  // Step 4: Calculate X reference offset
   const deltaRef_X = ((bfX - nu0_X) / bfX) * 1e6;
 
   return deltaRef_X;
@@ -75,6 +88,7 @@ const DEFAULT_OPTIONS = {
   referenceBounds: {},
   linkedToProton: [],
   protonFrequency: null,
+  spectrometerFreqs: {}, // Object mapping nucleus -> actual spectrometer frequency in MHz
   maxIterations: 500,
   tolerance: 1e-8,
   initialPH: 7.0,
@@ -152,10 +166,13 @@ export function extractConditions(params, parameterMap, baseConditions, options 
   if (options.linkedToProton && options.linkedToProton.length > 0 && options.protonFrequency) {
     const protonOffset = conditions.referenceOffsets['1H'] ?? 0;
     for (const nucleus of options.linkedToProton) {
+      // Pass actual spectrometer frequency for the heteronucleus if available
+      const nucleusFreq = options.spectrometerFreqs?.[nucleus] ?? null;
       conditions.referenceOffsets[nucleus] = calculateLinkedOffset(
         nucleus,
         options.protonFrequency,
-        protonOffset
+        protonOffset,
+        nucleusFreq
       );
     }
   }
@@ -712,7 +729,8 @@ export function fitParameters(observedShifts, buffers, samplesMap, initialCondit
     if (opts.linkedToProton && opts.linkedToProton.length > 0) {
       const protonOffset = fittedConditions.referenceOffsets['1H'] ?? 0;
       for (const nucleus of opts.linkedToProton) {
-        const linkedOffset = calculateLinkedOffset(nucleus, opts.protonFrequency, protonOffset);
+        const nucleusFreq = opts.spectrometerFreqs?.[nucleus] ?? null;
+        const linkedOffset = calculateLinkedOffset(nucleus, opts.protonFrequency, protonOffset, nucleusFreq);
         parameterResults[`ref_${nucleus}_linked`] = {
           value: linkedOffset,
           uncertainty: null,

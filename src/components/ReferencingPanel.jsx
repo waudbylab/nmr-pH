@@ -42,15 +42,22 @@ export function calculateSpectrometerFrequency(nucleus, protonFrequencyMHz) {
 /**
  * Calculate the reference offset for nucleus X from 1H reference offset.
  * Given:
- *   - bf(1H) and bf(X): spectrometer frequencies
+ *   - bf(1H): 1H spectrometer frequency
+ *   - bf(X): X nucleus spectrometer frequency (actual, if provided)
  *   - delta_ref(1H): 1H reference offset in ppm
  *
  * Algorithm:
  *   1. Calculate frequency of DSS for 1H: nu_DSS(1H) = bf(1H) * (1 - delta_ref(1H)/1e6)
  *   2. Calculate true zero frequency for X: nu_0(X) = nu_DSS(1H) * Xi(X) / Xi(1H)
- *   3. Calculate X reference offset: delta_ref(X) = (bf(X) - nu_0(X)) / bf(X) * 1e6
+ *   3. Use actual bf(X) if provided, otherwise derive from Xi ratio
+ *   4. Calculate X reference offset: delta_ref(X) = (bf(X) - nu_0(X)) / bf(X) * 1e6
+ *
+ * @param {string} nucleus - Target nucleus (e.g., '19F')
+ * @param {number} protonFrequencyMHz - 1H spectrometer frequency
+ * @param {number} protonReferenceOffsetPpm - 1H reference offset in ppm
+ * @param {number} [nucleusFrequencyMHz] - Actual X spectrometer frequency (if provided)
  */
-export function calculateLinkedReferenceOffset(nucleus, protonFrequencyMHz, protonReferenceOffsetPpm) {
+export function calculateLinkedReferenceOffset(nucleus, protonFrequencyMHz, protonReferenceOffsetPpm, nucleusFrequencyMHz = null) {
   if (nucleus === '1H') return protonReferenceOffsetPpm;
 
   const xiX = XI_RATIOS[nucleus];
@@ -64,8 +71,8 @@ export function calculateLinkedReferenceOffset(nucleus, protonFrequencyMHz, prot
   // Step 2: Calculate true zero frequency for X
   const nu0_X = nuDSS_H * (xiX / xiH);
 
-  // Step 3: Calculate bf(X)
-  const bfX = protonFrequencyMHz * (xiX / xiH);
+  // Step 3: Use actual bf(X) if provided, otherwise derive from Xi ratio
+  const bfX = nucleusFrequencyMHz || (protonFrequencyMHz * (xiX / xiH));
 
   // Step 4: Calculate X reference offset
   const deltaRef_X = ((bfX - nu0_X) / bfX) * 1e6;

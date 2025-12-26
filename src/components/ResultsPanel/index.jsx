@@ -49,7 +49,10 @@ export function ResultsPanel({
             />
           )}
 
-          <AssignmentsTable assignments={result.assignments} />
+          <AssignmentsTable
+            assignments={result.assignments}
+            residualsDetailed={result.residualsDetailed}
+          />
           <CitationsSection buffers={buffers} samplesMap={samplesMap} />
           <DownloadButtons
             result={result}
