@@ -35,6 +35,13 @@ export function WarningsDisplay({ result, validation }) {
     }
   }
 
+  // Check for high reduced chi-square
+  if (result?.statistics?.reducedChiSquared > 2) {
+    warnings.push(
+      `High reduced χ² (${result.statistics.reducedChiSquared.toFixed(2)}) suggests poor fit quality or underestimated uncertainties`
+    );
+  }
+
   if (errors.length === 0 && warnings.length === 0) {
     return null;
   }
