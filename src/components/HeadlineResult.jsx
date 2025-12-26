@@ -36,9 +36,11 @@ export function HeadlineResult({
   const pH = result.parameters.pH.value;
   const uncertainty = result.parameters.pH.uncertainty;
   const waterRef = calculateWaterReference(temperature);
+  const reducedChiSq = result.statistics?.reducedChiSquared;
+  const hasHighChiSq = reducedChiSq != null && reducedChiSq > 2;
 
   return (
-    <div className={`headline-result ${usingAssumedWaterRef ? 'warning' : 'success'}`}>
+    <div className={`headline-result ${usingAssumedWaterRef || hasHighChiSq ? 'warning' : 'success'}`}>
       <div className="headline-ph">
         <span className="headline-label">Fitted pH</span>
         <span className="headline-value">
@@ -52,6 +54,11 @@ export function HeadlineResult({
         {usingAssumedWaterRef && (
           <span className="headline-warning">
             Using assumed water reference ({waterRef.toFixed(3)} ppm at {temperature.toFixed(1)} K)
+          </span>
+        )}
+        {hasHighChiSq && (
+          <span className="headline-warning">
+            High χ²/DoF ({reducedChiSq.toFixed(2)}) — check fit quality
           </span>
         )}
       </div>
