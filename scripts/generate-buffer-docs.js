@@ -56,7 +56,7 @@ let html = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Buffer Database - NMR Buffer pH Estimation</title>
+  <title>Buffers</title>
   <style>
     :root {
       --color-accent: #1a73e8;
@@ -96,21 +96,26 @@ let html = `<!DOCTYPE html>
 
     h2 {
       color: var(--color-text);
-      margin-top: 2rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--color-border);
+      margin-top: 2.5rem;
+      padding-top: 1.5rem;
+      border-top: 2px solid var(--color-border);
     }
 
-    h3 { color: var(--color-accent); margin-top: 1.5rem; }
-    h4 { color: var(--color-text-secondary); margin-top: 1rem; }
+    h3 {
+      color: var(--color-text-secondary);
+      margin-top: 1.5rem;
+      font-size: 1.1rem;
+    }
 
-    a { color: var(--color-accent); }
+    a { color: var(--color-accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
 
     code {
       background: var(--color-code-bg);
       padding: 0.2em 0.4em;
       border-radius: 4px;
       font-size: 0.9em;
+      font-family: monospace;
     }
 
     table {
@@ -124,6 +129,7 @@ let html = `<!DOCTYPE html>
       text-align: left;
       padding: 0.5rem 0.75rem;
       border: 1px solid var(--color-border);
+      vertical-align: top;
     }
 
     th {
@@ -142,11 +148,8 @@ let html = `<!DOCTYPE html>
 
     .nav a {
       margin-right: 1.5rem;
-      text-decoration: none;
       font-weight: 500;
     }
-
-    .nav a:hover { text-decoration: underline; }
 
     .meta {
       background: var(--color-code-bg);
@@ -158,40 +161,49 @@ let html = `<!DOCTYPE html>
 
     .meta strong { color: var(--color-text); }
 
-    .buffer-card {
-      background: var(--color-card);
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .buffer-card h3 {
-      margin-top: 0;
-      border-bottom: 1px solid var(--color-border);
-      padding-bottom: 0.5rem;
-    }
-
     .nuclei-badges {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
+      display: inline-flex;
+      gap: 0.4rem;
+      margin-left: 0.75rem;
     }
 
     .nucleus-badge {
       background: var(--color-accent);
       color: white;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.8rem;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
       font-weight: 500;
     }
 
-    .pka-info {
-      background: #e8f5e9;
+    .buffer-meta {
+      background: var(--color-code-bg);
       padding: 0.75rem 1rem;
       border-radius: 6px;
-      margin-bottom: 1rem;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+
+    .pka-section {
+      background: #e8f5e9;
+      padding: 1rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+    }
+
+    .pka-item {
+      margin-bottom: 0.75rem;
+      line-height: 1.8;
+    }
+
+    .pka-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .pka-line {
+      display: block;
+      padding-left: 1rem;
+      color: var(--color-text-secondary);
     }
 
     .timestamp {
@@ -202,14 +214,22 @@ let html = `<!DOCTYPE html>
     }
 
     sup { font-size: 0.7em; }
+    sub { font-size: 0.7em; }
+
+    .coeff {
+      display: block;
+      font-size: 0.85em;
+      color: var(--color-text-secondary);
+      margin-top: 0.15rem;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <nav class="nav">
-      <a href="../">App</a>
-      <a href="./">Documentation</a>
-      <a href="./buffers.html">Buffer Database</a>
+      <a href="../">Home</a>
+      <a href="./">Docs</a>
+      <a href="./buffers.html">Buffers</a>
       <a href="https://github.com/waudbygroup/nmr-pH">GitHub</a>
     </nav>
 
@@ -221,144 +241,124 @@ let html = `<!DOCTYPE html>
       <strong>Buffers:</strong> ${db.buffers.length} ·
       <strong>Samples:</strong> ${db.samples.length}
     </div>
-
-    <h2>Samples</h2>
-    <table>
-      <tr>
-        <th>Sample ID</th>
-        <th>Solvent</th>
-        <th>Authors</th>
-        <th>T<sub>ref</sub> (K)</th>
-        <th>I<sub>ref</sub> (M)</th>
-        <th>pH Range</th>
-      </tr>
 `;
 
-// Add samples
-for (const sample of db.samples) {
-  const authors = sample.authors.map(a => a.name).join(', ');
-  const phRange = sample.measurement_ranges?.pH
-    ? `${sample.measurement_ranges.pH.min} - ${sample.measurement_ranges.pH.max}`
-    : '-';
-
-  html += `      <tr>
-        <td><code>${sample.sample_id}</code></td>
-        <td>${formatSolvent(sample.solvent)}</td>
-        <td>${authors}</td>
-        <td>${sample.reference_temperature_K}</td>
-        <td>${sample.reference_ionic_strength_M}</td>
-        <td>${phRange}</td>
-      </tr>
-`;
-}
-
-html += `    </table>
-
-    <h2>Buffers</h2>
-`;
-
-// Add buffers
+// Add buffers as H2 sections
 for (const buffer of db.buffers) {
   const sample = samplesMap.get(buffer.sample_id);
   const nuclei = Object.keys(buffer.chemical_shifts);
 
-  html += `
-    <div class="buffer-card">
-      <h3>${buffer.buffer_name}</h3>
-      <div class="nuclei-badges">
-`;
+  html += `    <h2>${buffer.buffer_name}`;
 
   for (const nucleus of nuclei) {
-    html += `        <span class="nucleus-badge">${formatNucleus(nucleus)}</span>\n`;
+    html += `<span class="nucleus-badge">${formatNucleus(nucleus)}</span>`;
   }
 
-  html += `      </div>
+  html += `</h2>
 
-      <p>
-        <strong>Buffer ID:</strong> <code>${buffer.buffer_id}</code><br>
-        <strong>Family:</strong> ${buffer.buffer_family}<br>
-        <strong>Solvent:</strong> ${sample ? formatSolvent(sample.solvent) : 'Unknown'}<br>
-        <strong>Ionisation States:</strong> ${buffer.ionisation_states}
-      </p>
+    <div class="buffer-meta">
+      <strong>Buffer ID:</strong> <code>${buffer.buffer_id}</code><br>
+      <strong>Family:</strong> ${buffer.buffer_family}<br>
+      <strong>Solvent:</strong> ${sample ? formatSolvent(sample.solvent) : 'Unknown'}<br>
+      <strong>Ionisation States:</strong> ${buffer.ionisation_states}<br>
+      <strong>Sample:</strong> <code>${buffer.sample_id}</code> (T<sub>ref</sub> = ${sample?.reference_temperature_K || 298.15} K, I<sub>ref</sub> = ${sample?.reference_ionic_strength_M || 0} M)
+    </div>
 
-      <div class="pka-info">
+    <h3>Thermodynamic Parameters</h3>
+    <div class="pka-section">
 `;
 
-  // pKa parameters
+  // pKa parameters - each on new line
   for (const pka of buffer.pKa_parameters) {
-    html += `        <strong>pKa${pka.pKa_index}:</strong> ${formatValue(pka.pKa)}`;
+    html += `      <div class="pka-item">
+        <strong>pKa${pka.pKa_index}:</strong> ${formatValue(pka.pKa)}
+`;
     if (pka.dH_kJ_mol) {
-      html += ` · ΔH = ${formatValue(pka.dH_kJ_mol, 1)} kJ/mol`;
+      html += `        <span class="pka-line">ΔH = ${formatValue(pka.dH_kJ_mol, 1)} kJ/mol</span>
+`;
     }
     if (pka.dCp_J_mol_K) {
-      html += ` · ΔCp = ${formatValue(pka.dCp_J_mol_K, 0)} J/(mol·K)`;
+      html += `        <span class="pka-line">ΔCp = ${formatValue(pka.dCp_J_mol_K, 0)} J/(mol·K)</span>
+`;
     }
-    html += `<br>\n`;
+    if (pka.ion_size_angstrom) {
+      html += `        <span class="pka-line">Ion size = ${pka.ion_size_angstrom} Å (for ionic strength corrections)</span>
+`;
+    }
+    html += `        <span class="pka-line">Protonated charge: ${pka.protonated_charge > 0 ? '+' : ''}${pka.protonated_charge}</span>
+      </div>
+`;
   }
 
-  html += `      </div>
+  html += `    </div>
 
-      <h4>Chemical Shifts</h4>
+    <h3>Chemical Shifts</h3>
 `;
 
   // Chemical shifts table for each nucleus
   for (const [nucleus, resonances] of Object.entries(buffer.chemical_shifts)) {
-    html += `
-      <p><strong>${formatNucleus(nucleus)}</strong></p>
-      <table>
-        <tr>
-          <th>Resonance</th>
-          <th>Description</th>
+    html += `    <p><strong>${formatNucleus(nucleus)}</strong></p>
+    <table>
+      <tr>
+        <th>Resonance</th>
+        <th>Description</th>
 `;
 
     // Add column headers for each ionisation state
     for (let i = 0; i < buffer.ionisation_states; i++) {
-      html += `          <th>State ${i} (ppm)</th>\n`;
+      html += `        <th>State ${i} (ppm)</th>
+`;
     }
 
-    html += `        </tr>
+    html += `      </tr>
 `;
 
     for (const res of resonances) {
-      html += `        <tr>
-          <td><code>${res.resonance_id}</code></td>
-          <td>${res.description || '-'}</td>
+      html += `      <tr>
+        <td><code>${res.resonance_id}</code></td>
+        <td>${res.description || '-'}</td>
 `;
 
-      // Get shifts for each state
+      // Get shifts for each state with coefficients
       for (let i = 0; i < buffer.ionisation_states; i++) {
         const stateShift = res.limiting_shifts.find(ls => ls.ionisation_state === i);
         if (stateShift) {
-          html += `          <td>${formatValue(stateShift.shift_ppm, 3)}</td>\n`;
+          html += `        <td>${formatValue(stateShift.shift_ppm, 3)}`;
+          if (stateShift.temperature_coefficient_ppm_per_K) {
+            html += `<span class="coeff">α<sub>T</sub> = ${formatValue(stateShift.temperature_coefficient_ppm_per_K, 4)} ppm/K</span>`;
+          }
+          if (stateShift.ionic_strength_coefficient_ppm_per_M) {
+            html += `<span class="coeff">α<sub>I</sub> = ${formatValue(stateShift.ionic_strength_coefficient_ppm_per_M, 2)} ppm/M</span>`;
+          }
+          html += `</td>
+`;
         } else {
-          html += `          <td>-</td>\n`;
+          html += `        <td>-</td>
+`;
         }
       }
 
-      html += `        </tr>
+      html += `      </tr>
 `;
     }
 
-    html += `      </table>
+    html += `    </table>
 `;
   }
 
   if (buffer.notes) {
-    html += `      <p><em>${buffer.notes}</em></p>\n`;
-  }
-
-  html += `    </div>
+    html += `    <p style="font-style: italic; color: var(--color-text-secondary);"><strong>Notes:</strong> ${buffer.notes}</p>
 `;
+  }
 }
 
-html += `
-    <div class="timestamp">
+html += `    <div class="timestamp">
       Generated: ${new Date().toISOString().split('T')[0]}
     </div>
 
     <hr style="margin-top: 2rem;">
     <p style="color: var(--color-text-secondary); font-size: 0.875rem; text-align: center;">
-      NMR Buffer pH Estimation · <a href="https://waudbylab.org">Waudby Group</a> · UCL School of Pharmacy
+      NMR pH calibration · <a href="https://waudbylab.org">Waudby Group</a> · UCL School of Pharmacy
     </p>
   </div>
 </body>
