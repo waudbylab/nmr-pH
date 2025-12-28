@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Documentation - NMR Buffer pH Estimation</title>
+  <title>Documentation - NMR pH calibration</title>
   <style>
     :root {
       --color-accent: #1a73e8;
@@ -119,6 +119,37 @@
       margin: 1rem 0;
       border-radius: 0 8px 8px 0;
     }
+
+    .equation {
+      background: var(--color-code-bg);
+      padding: 1rem 1.5rem;
+      border-radius: 8px;
+      margin: 1rem 0;
+      border-left: 3px solid var(--color-accent);
+      font-family: 'Times New Roman', serif;
+      font-size: 1.1em;
+      overflow-x: auto;
+    }
+
+    .equation-number {
+      float: right;
+      color: var(--color-text-secondary);
+      font-size: 0.9em;
+    }
+
+    .var {
+      font-style: italic;
+    }
+
+    .sub {
+      font-size: 0.8em;
+      vertical-align: sub;
+    }
+
+    .sup {
+      font-size: 0.8em;
+      vertical-align: super;
+    }
   </style>
 </head>
 <body>
@@ -130,12 +161,128 @@
       <a href="https://github.com/waudbygroup/nmr-pH">GitHub</a>
     </nav>
 
-    <h1>NMR Buffer pH Estimation - Documentation</h1>
+    <h1>NMR pH calibration - Documentation</h1>
 
     <p>
       This application estimates sample pH from NMR buffer chemical shifts using nonlinear
       least-squares fitting. It supports multiple buffers, nuclei, and can refine temperature,
       ionic strength, and reference offsets.
+    </p>
+
+    <h2>Theory and Methods</h2>
+
+    <h3>pH-Dependent Chemical Shifts</h3>
+
+    <p>
+      The observed chemical shift of a buffer resonance depends on the population-weighted average
+      of the limiting chemical shifts for each ionisation state:
+    </p>
+
+    <div class="equation">
+      δ<span class="sub">obs</span> = Σ <span class="var">f</span><span class="sub"><span class="var">i</span></span> × δ<span class="sub"><span class="var">i</span></span>
+      <span class="equation-number">(1)</span>
+    </div>
+
+    <p>
+      where <span class="var">f</span><span class="sub"><span class="var">i</span></span> is the fractional population of ionisation state <span class="var">i</span>,
+      and δ<span class="sub"><span class="var">i</span></span> is the limiting chemical shift for that state.
+    </p>
+
+    <p>
+      For a buffer with a single pKa, the fractional populations are given by the Henderson-Hasselbalch equation:
+    </p>
+
+    <div class="equation">
+      <span class="var">f</span><span class="sub">protonated</span> = 1 / (1 + 10<span class="sup">pH - pKa</span>)
+      <span class="equation-number">(2)</span>
+    </div>
+
+    <div class="equation">
+      <span class="var">f</span><span class="sub">deprotonated</span> = 1 / (1 + 10<span class="sup">pKa - pH</span>)
+      <span class="equation-number">(3)</span>
+    </div>
+
+    <h3>Temperature Dependence</h3>
+
+    <p>
+      The pKa varies with temperature according to the van't Hoff equation, with an optional heat capacity correction:
+    </p>
+
+    <div class="equation">
+      pKa(<span class="var">T</span>) = pKa(<span class="var">T</span><span class="sub">ref</span>) + (Δ<span class="var">H</span>/<span class="var">R</span>)(1/<span class="var">T</span> - 1/<span class="var">T</span><span class="sub">ref</span>) + (Δ<span class="var">C</span><span class="sub">p</span>/<span class="var">R</span>)(<span class="var">T</span><span class="sub">ref</span>/<span class="var">T</span> - 1 + ln(<span class="var">T</span>/<span class="var">T</span><span class="sub">ref</span>))
+      <span class="equation-number">(4)</span>
+    </div>
+
+    <p>
+      where <span class="var">R</span> = 8.314 J/(mol·K) is the gas constant,
+      Δ<span class="var">H</span> is the enthalpy of ionization, and
+      Δ<span class="var">C</span><span class="sub">p</span> is the heat capacity change.
+    </p>
+
+    <p>
+      Chemical shifts also have temperature dependence, described by linear temperature coefficients:
+    </p>
+
+    <div class="equation">
+      δ(<span class="var">T</span>) = δ(<span class="var">T</span><span class="sub">ref</span>) + <span class="var">α</span><span class="sub">T</span> × (<span class="var">T</span> - <span class="var">T</span><span class="sub">ref</span>)
+      <span class="equation-number">(5)</span>
+    </div>
+
+    <p>
+      where <span class="var">α</span><span class="sub">T</span> is the temperature coefficient in ppm/K.
+    </p>
+
+    <h3>Ionic Strength Dependence</h3>
+
+    <p>
+      The pKa is corrected for ionic strength using the Davies equation:
+    </p>
+
+    <div class="equation">
+      pKa(<span class="var">I</span>) = pKa(<span class="var">I</span>=0) + <span class="var">A</span>·Δ<span class="var">z</span><span class="sup">2</span>·(√<span class="var">I</span>/(1+√<span class="var">I</span>) - 0.3<span class="var">I</span>)
+      <span class="equation-number">(6)</span>
+    </div>
+
+    <p>
+      where <span class="var">A</span> ≈ 0.51 M<span class="sup">-1/2</span> at 25°C,
+      Δ<span class="var">z</span><span class="sup">2</span> is the change in squared charge upon deprotonation,
+      and <span class="var">I</span> is the ionic strength in molarity.
+    </p>
+
+    <p>
+      The ionic strength is calculated from the molar concentrations and charges of all ions in solution:
+    </p>
+
+    <div class="equation">
+      <span class="var">I</span> = 0.5 × Σ(<span class="var">c</span><span class="sub"><span class="var">i</span></span> × <span class="var">z</span><span class="sub"><span class="var">i</span></span><span class="sup">2</span>)
+      <span class="equation-number">(7)</span>
+    </div>
+
+    <p>
+      Chemical shifts may also have ionic strength dependence, described by linear coefficients:
+    </p>
+
+    <div class="equation">
+      δ(<span class="var">I</span>) = δ(<span class="var">I</span>=0) + <span class="var">α</span><span class="sub">I</span> × <span class="var">I</span>
+      <span class="equation-number">(8)</span>
+    </div>
+
+    <p>
+      where <span class="var">α</span><span class="sub">I</sub> is the ionic strength coefficient in ppm/M.
+    </p>
+
+    <h3>Fitting Method</h3>
+
+    <p>
+      The application uses nonlinear least-squares fitting (Levenberg-Marquardt algorithm) to
+      simultaneously determine pH from all observed chemical shifts. The fitting can optionally
+      refine temperature, ionic strength, and/or chemical shift reference offsets.
+    </p>
+
+    <p>
+      Peak assignments are made automatically by matching observed shifts to the closest predicted
+      resonance. Uncertainties in fitted parameters are estimated from the Jacobian matrix at the
+      optimal solution.
     </p>
 
     <h2>Database Schema</h2>
@@ -218,17 +365,28 @@
         {
           "ionisation_state": 0,
           "shift_ppm": [8.52, 0.01],
-          "temperature_coefficient_ppm_per_K": [-0.0045, 0.0003]
+          "temperature_coefficient_ppm_per_K": [-0.0045, 0.0003],
+          "ionic_strength_coefficient_ppm_per_M": [0.02, 0.01]
         },
         {
           "ionisation_state": 1,
           "shift_ppm": [7.68, 0.01],
-          "temperature_coefficient_ppm_per_K": [-0.0038, 0.0003]
+          "temperature_coefficient_ppm_per_K": [-0.0038, 0.0003],
+          "ionic_strength_coefficient_ppm_per_M": [0.03, 0.01]
         }
       ]
     }
   ]
 }</code></pre>
+
+    <div class="note">
+      <strong>Temperature and Ionic Strength Coefficients:</strong> The
+      <code>temperature_coefficient_ppm_per_K</code> and
+      <code>ionic_strength_coefficient_ppm_per_M</code> fields are optional. They describe
+      how the limiting chemical shift changes with temperature or ionic strength for each
+      ionisation state. When provided, these are used to predict chemical shifts at conditions
+      different from the reference conditions.
+    </div>
 
     <h2>Adding a New Buffer - Worked Example</h2>
 
@@ -368,24 +526,6 @@
       <li>Submit a pull request with your changes</li>
     </ol>
 
-    <h2>Thermodynamic Equations</h2>
-
-    <h3>Temperature Dependence of pKa</h3>
-
-    <p>The pKa temperature dependence uses the van't Hoff equation with heat capacity correction:</p>
-
-    <pre><code>pKa(T) = pKa(T_ref) + (ΔH/R)(1/T - 1/T_ref) + (ΔCp/R)(T_ref/T - 1 + ln(T/T_ref))</code></pre>
-
-    <p>Where R = 8.314 J/(mol·K) is the gas constant.</p>
-
-    <h3>Ionic Strength Dependence</h3>
-
-    <p>The Davies equation is used to correct pKa for ionic strength:</p>
-
-    <pre><code>pKa(I) = pKa(I=0) + A·Δz²·(√I/(1+√I) - 0.3I)</code></pre>
-
-    <p>Where A ≈ 0.51 at 25°C and Δz² is the change in squared charge upon deprotonation.</p>
-
     <h2>Further Information</h2>
 
     <ul>
@@ -396,7 +536,7 @@
 
     <hr style="margin-top: 2rem;">
     <p style="color: var(--color-text-secondary); font-size: 0.875rem; text-align: center;">
-      NMR Buffer pH Estimation · <a href="https://waudbylab.org">Waudby Group</a> · UCL School of Pharmacy
+      NMR pH calibration · <a href="https://waudbylab.org">Waudby Group</a> · UCL School of Pharmacy
     </p>
   </div>
 </body>

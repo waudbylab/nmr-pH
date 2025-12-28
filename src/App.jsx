@@ -20,7 +20,7 @@ function AppContent() {
   // State
   const [solvent, setSolvent] = useState('');
   const [selectedBufferIds, setSelectedBufferIds] = useState([]);
-  const [temperature, setTemperature] = useState(298.15);
+  const [temperature, setTemperature] = useState(298);
   const [ionicStrength, setIonicStrength] = useState(0.15);
   const [refineTemperature, setRefineTemperature] = useState(false);
   const [refineIonicStrength, setRefineIonicStrength] = useState(false);
@@ -372,10 +372,17 @@ function AppContent() {
 
   return (
     <div className="app">
+      <nav className="app-nav">
+        <a href="./">App</a>
+        <a href="./docs/">Documentation</a>
+        <a href="./docs/buffers.html">Buffer Database</a>
+        <a href="https://github.com/waudbygroup/nmr-pH">GitHub</a>
+      </nav>
+
       <header className="app-header">
-        <h1>NMR Buffer pH Estimation</h1>
+        <h1>NMR pH calibration</h1>
         <p className="subtitle">
-          Estimate sample pH from buffer chemical shifts using nonlinear least-squares fitting
+          pH estimation from chemical shifts
         </p>
         <span className="version">v0.1</span>
       </header>
@@ -476,21 +483,10 @@ function AppContent() {
       </main>
 
       <footer className="app-footer">
-        <div className="footer-links">
-          <a href="https://github.com/waudbygroup/nmr-pH" target="_blank" rel="noopener noreferrer">
-            GitHub
-          </a>
-          <a href="./docs/" target="_blank" rel="noopener noreferrer">
-            Documentation
-          </a>
-          <a href="./docs/buffers.html" target="_blank" rel="noopener noreferrer">
-            Buffer Database
-          </a>
-        </div>
         <p className="footer-affiliation">
-          <a href="https://waudbylab.org" target="_blank" rel="noopener noreferrer">Waudby Group</a>
+          <a href="https://waudbylab.org">Waudby Group</a>
           {' · '}
-          <a href="https://www.ucl.ac.uk/pharmacy" target="_blank" rel="noopener noreferrer">UCL School of Pharmacy</a>
+          <a href="https://www.ucl.ac.uk/pharmacy">UCL School of Pharmacy</a>
         </p>
       </footer>
     </div>
