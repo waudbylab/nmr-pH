@@ -188,13 +188,18 @@ section {
 
 .condition-row {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: var(--spacing-md);
   margin-bottom: 0.75rem;
 }
 
 .condition-input {
   flex: 0 0 auto;
+}
+
+.condition-input label {
+  display: block;
+  margin-bottom: 0.25rem;
 }
 
 .condition-input input {
@@ -204,7 +209,7 @@ section {
 .condition-checkbox {
   display: flex;
   align-items: center;
-  padding-bottom: 0.4rem;
+  margin-top: 1.75rem;
 }
 
 .condition-checkbox label {

@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Documentation - NMR pH calibration</title>
+  <title>Documentation</title>
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   <style>
     :root {
       --color-accent: #1a73e8;
@@ -50,7 +52,8 @@
 
     h3 { color: var(--color-text-secondary); }
 
-    a { color: var(--color-accent); }
+    a { color: var(--color-accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
 
     code {
       background: var(--color-code-bg);
@@ -98,11 +101,8 @@
 
     .nav a {
       margin-right: 1.5rem;
-      text-decoration: none;
       font-weight: 500;
     }
-
-    .nav a:hover { text-decoration: underline; }
 
     .note {
       background: #e3f2fd;
@@ -121,47 +121,22 @@
     }
 
     .equation {
-      background: var(--color-code-bg);
-      padding: 1rem 1.5rem;
-      border-radius: 8px;
-      margin: 1rem 0;
-      border-left: 3px solid var(--color-accent);
-      font-family: 'Times New Roman', serif;
-      font-size: 1.1em;
+      margin: 1.5rem 0;
+      padding: 1rem;
       overflow-x: auto;
-    }
-
-    .equation-number {
-      float: right;
-      color: var(--color-text-secondary);
-      font-size: 0.9em;
-    }
-
-    .var {
-      font-style: italic;
-    }
-
-    .sub {
-      font-size: 0.8em;
-      vertical-align: sub;
-    }
-
-    .sup {
-      font-size: 0.8em;
-      vertical-align: super;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <nav class="nav">
-      <a href="../">App</a>
-      <a href="./">Documentation</a>
-      <a href="./buffers.html">Buffer Database</a>
+      <a href="../">Home</a>
+      <a href="./">Docs</a>
+      <a href="./buffers.html">Buffers</a>
       <a href="https://github.com/waudbygroup/nmr-pH">GitHub</a>
     </nav>
 
-    <h1>NMR pH calibration - Documentation</h1>
+    <h1>Documentation</h1>
 
     <p>
       This application estimates sample pH from NMR buffer chemical shifts using nonlinear
@@ -179,13 +154,12 @@
     </p>
 
     <div class="equation">
-      δ<span class="sub">obs</span> = Σ <span class="var">f</span><span class="sub"><span class="var">i</span></span> × δ<span class="sub"><span class="var">i</span></span>
-      <span class="equation-number">(1)</span>
+      $$\delta_{\mathrm{obs}} = \sum_i f_i \cdot \delta_i \tag{1}$$
     </div>
 
     <p>
-      where <span class="var">f</span><span class="sub"><span class="var">i</span></span> is the fractional population of ionisation state <span class="var">i</span>,
-      and δ<span class="sub"><span class="var">i</span></span> is the limiting chemical shift for that state.
+      where \(f_i\) is the fractional population of ionisation state \(i\),
+      and \(\delta_i\) is the limiting chemical shift for that state.
     </p>
 
     <p>
@@ -193,13 +167,11 @@
     </p>
 
     <div class="equation">
-      <span class="var">f</span><span class="sub">protonated</span> = 1 / (1 + 10<span class="sup">pH - pKa</span>)
-      <span class="equation-number">(2)</span>
+      $$f_{\mathrm{protonated}} = \frac{1}{1 + 10^{\mathrm{pH} - \mathrm{p}K_a}} \tag{2}$$
     </div>
 
     <div class="equation">
-      <span class="var">f</span><span class="sub">deprotonated</span> = 1 / (1 + 10<span class="sup">pKa - pH</span>)
-      <span class="equation-number">(3)</span>
+      $$f_{\mathrm{deprotonated}} = \frac{1}{1 + 10^{\mathrm{p}K_a - \mathrm{pH}}} \tag{3}$$
     </div>
 
     <h3>Temperature Dependence</h3>
@@ -209,14 +181,13 @@
     </p>
 
     <div class="equation">
-      pKa(<span class="var">T</span>) = pKa(<span class="var">T</span><span class="sub">ref</span>) + (Δ<span class="var">H</span>/<span class="var">R</span>)(1/<span class="var">T</span> - 1/<span class="var">T</span><span class="sub">ref</span>) + (Δ<span class="var">C</span><span class="sub">p</span>/<span class="var">R</span>)(<span class="var">T</span><span class="sub">ref</span>/<span class="var">T</span> - 1 + ln(<span class="var">T</span>/<span class="var">T</span><span class="sub">ref</span>))
-      <span class="equation-number">(4)</span>
+      $$\mathrm{p}K_a(T) = \mathrm{p}K_a(T_{\mathrm{ref}}) + \frac{\Delta H}{R}\left(\frac{1}{T} - \frac{1}{T_{\mathrm{ref}}}\right) + \frac{\Delta C_p}{R}\left(\frac{T_{\mathrm{ref}}}{T} - 1 + \ln\frac{T}{T_{\mathrm{ref}}}\right) \tag{4}$$
     </div>
 
     <p>
-      where <span class="var">R</span> = 8.314 J/(mol·K) is the gas constant,
-      Δ<span class="var">H</span> is the enthalpy of ionization, and
-      Δ<span class="var">C</span><span class="sub">p</span> is the heat capacity change.
+      where \(R = 8.314\) J/(mol·K) is the gas constant,
+      \(\Delta H\) is the enthalpy of ionization, and
+      \(\Delta C_p\) is the heat capacity change.
     </p>
 
     <p>
@@ -224,12 +195,11 @@
     </p>
 
     <div class="equation">
-      δ(<span class="var">T</span>) = δ(<span class="var">T</span><span class="sub">ref</span>) + <span class="var">α</span><span class="sub">T</span> × (<span class="var">T</span> - <span class="var">T</span><span class="sub">ref</span>)
-      <span class="equation-number">(5)</span>
+      $$\delta(T) = \delta(T_{\mathrm{ref}}) + \alpha_T \cdot (T - T_{\mathrm{ref}}) \tag{5}$$
     </div>
 
     <p>
-      where <span class="var">α</span><span class="sub">T</span> is the temperature coefficient in ppm/K.
+      where \(\alpha_T\) is the temperature coefficient in ppm/K.
     </p>
 
     <h3>Ionic Strength Dependence</h3>
@@ -239,14 +209,13 @@
     </p>
 
     <div class="equation">
-      pKa(<span class="var">I</span>) = pKa(<span class="var">I</span>=0) + <span class="var">A</span>·Δ<span class="var">z</span><span class="sup">2</span>·(√<span class="var">I</span>/(1+√<span class="var">I</span>) - 0.3<span class="var">I</span>)
-      <span class="equation-number">(6)</span>
+      $$\mathrm{p}K_a(I) = \mathrm{p}K_a(I=0) + A \cdot \Delta z^2 \cdot \left(\frac{\sqrt{I}}{1+\sqrt{I}} - 0.3I\right) \tag{6}$$
     </div>
 
     <p>
-      where <span class="var">A</span> ≈ 0.51 M<span class="sup">-1/2</span> at 25°C,
-      Δ<span class="var">z</span><span class="sup">2</span> is the change in squared charge upon deprotonation,
-      and <span class="var">I</span> is the ionic strength in molarity.
+      where \(A \approx 0.51\) M<sup>-1/2</sup> at 25°C,
+      \(\Delta z^2\) is the change in squared charge upon deprotonation,
+      and \(I\) is the ionic strength in molarity.
     </p>
 
     <p>
@@ -254,8 +223,7 @@
     </p>
 
     <div class="equation">
-      <span class="var">I</span> = 0.5 × Σ(<span class="var">c</span><span class="sub"><span class="var">i</span></span> × <span class="var">z</span><span class="sub"><span class="var">i</span></span><span class="sup">2</span>)
-      <span class="equation-number">(7)</span>
+      $$I = \frac{1}{2} \sum_i c_i \cdot z_i^2 \tag{7}$$
     </div>
 
     <p>
@@ -263,12 +231,11 @@
     </p>
 
     <div class="equation">
-      δ(<span class="var">I</span>) = δ(<span class="var">I</span>=0) + <span class="var">α</span><span class="sub">I</span> × <span class="var">I</span>
-      <span class="equation-number">(8)</span>
+      $$\delta(I) = \delta(I=0) + \alpha_I \cdot I \tag{8}$$
     </div>
 
     <p>
-      where <span class="var">α</span><span class="sub">I</sub> is the ionic strength coefficient in ppm/M.
+      where \(\alpha_I\) is the ionic strength coefficient in ppm/M.
     </p>
 
     <h3>Fitting Method</h3>
@@ -307,14 +274,12 @@
 
     <table>
       <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>sample_id</code></td><td>string</td><td>Unique identifier (e.g., "waudby_2024_comprehensive_10pctD2O")</td></tr>
+      <tr><td><code>sample_id</code></td><td>string</td><td>Unique identifier</td></tr>
       <tr><td><code>solvent</code></td><td>enum</td><td>One of: "10pct_D2O", "100pct_D2O", "H2O", "other"</td></tr>
       <tr><td><code>authors</code></td><td>array</td><td>List of {name, orcid, affiliation}</td></tr>
-      <tr><td><code>reference_temperature_K</code></td><td>number</td><td>Reference temperature in Kelvin (typically 298.15)</td></tr>
-      <tr><td><code>reference_ionic_strength_M</code></td><td>number</td><td>Reference ionic strength in M (typically 0.0)</td></tr>
-      <tr><td><code>measurement_ranges</code></td><td>object</td><td>Valid ranges for pH, temperature_K, ionic_strength_M</td></tr>
-      <tr><td><code>temperature_calibration</code></td><td>string</td><td>Description of temperature calibration method</td></tr>
-      <tr><td><code>pH_calibration</code></td><td>string</td><td>Description of pH calibration method</td></tr>
+      <tr><td><code>reference_temperature_K</code></td><td>number</td><td>Reference temperature in Kelvin</td></tr>
+      <tr><td><code>reference_ionic_strength_M</code></td><td>number</td><td>Reference ionic strength in M</td></tr>
+      <tr><td><code>measurement_ranges</code></td><td>object</td><td>Valid ranges for pH, temperature, ionic strength</td></tr>
     </table>
 
     <h3>Buffer Object</h3>
@@ -323,208 +288,21 @@
 
     <table>
       <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>buffer_id</code></td><td>string</td><td>Unique identifier (e.g., "waudby_2024_imidazole_10pctD2O")</td></tr>
+      <tr><td><code>buffer_id</code></td><td>string</td><td>Unique identifier</td></tr>
       <tr><td><code>buffer_name</code></td><td>string</td><td>Human-readable name</td></tr>
-      <tr><td><code>buffer_family</code></td><td>string</td><td>Buffer family for grouping</td></tr>
       <tr><td><code>sample_id</code></td><td>string</td><td>Reference to parent sample</td></tr>
-      <tr><td><code>ionisation_states</code></td><td>integer</td><td>Number of ionisation states (pKa count + 1)</td></tr>
-      <tr><td><code>pKa_parameters</code></td><td>array</td><td>Array of pKa parameter objects</td></tr>
-      <tr><td><code>chemical_shifts</code></td><td>object</td><td>Keyed by nucleus (1H, 13C, 15N, 19F, 31P)</td></tr>
+      <tr><td><code>ionisation_states</code></td><td>integer</td><td>Number of ionisation states</td></tr>
+      <tr><td><code>pKa_parameters</code></td><td>array</td><td>pKa and thermodynamic data</td></tr>
+      <tr><td><code>chemical_shifts</code></td><td>object</td><td>Chemical shift data by nucleus</td></tr>
     </table>
-
-    <h3>pKa Parameters</h3>
-
-    <p>Each pKa parameter object describes one deprotonation equilibrium:</p>
-
-    <table>
-      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>pKa_index</code></td><td>integer</td><td>1-indexed pKa number</td></tr>
-      <tr><td><code>pKa</code></td><td>[value, uncertainty]</td><td>pKa at reference conditions</td></tr>
-      <tr><td><code>dH_kJ_mol</code></td><td>[value, uncertainty]</td><td>Enthalpy of ionisation</td></tr>
-      <tr><td><code>dCp_J_mol_K</code></td><td>[value, uncertainty]</td><td>Heat capacity change (optional)</td></tr>
-      <tr><td><code>protonated_charge</code></td><td>integer</td><td>Charge of the protonated form</td></tr>
-      <tr><td><code>ion_size_angstrom</code></td><td>number</td><td>Ion size for Debye-Hückel (optional)</td></tr>
-    </table>
-
-    <div class="note">
-      <strong>Note:</strong> Values with uncertainties are represented as 2-element arrays:
-      <code>[value, uncertainty]</code>. Single numbers can be used when uncertainty is not available.
-    </div>
-
-    <h3>Chemical Shifts</h3>
-
-    <p>Chemical shifts are organized by nucleus, with each resonance having limiting shifts for each ionisation state:</p>
-
-    <pre><code>"chemical_shifts": {
-  "1H": [
-    {
-      "resonance_id": "H2",
-      "description": "Imidazole H2 proton",
-      "multiplicity": "singlet",
-      "limiting_shifts": [
-        {
-          "ionisation_state": 0,
-          "shift_ppm": [8.52, 0.01],
-          "temperature_coefficient_ppm_per_K": [-0.0045, 0.0003],
-          "ionic_strength_coefficient_ppm_per_M": [0.02, 0.01]
-        },
-        {
-          "ionisation_state": 1,
-          "shift_ppm": [7.68, 0.01],
-          "temperature_coefficient_ppm_per_K": [-0.0038, 0.0003],
-          "ionic_strength_coefficient_ppm_per_M": [0.03, 0.01]
-        }
-      ]
-    }
-  ]
-}</code></pre>
 
     <div class="note">
       <strong>Temperature and Ionic Strength Coefficients:</strong> The
       <code>temperature_coefficient_ppm_per_K</code> and
-      <code>ionic_strength_coefficient_ppm_per_M</code> fields are optional. They describe
+      <code>ionic_strength_coefficient_ppm_per_M</code> fields describe
       how the limiting chemical shift changes with temperature or ionic strength for each
-      ionisation state. When provided, these are used to predict chemical shifts at conditions
-      different from the reference conditions.
+      ionisation state.
     </div>
-
-    <h2>Adding a New Buffer - Worked Example</h2>
-
-    <p>Let's add imidazole as a new buffer. Imidazole has one pKa (~7.0) and two ionisation states.</p>
-
-    <h3>Step 1: Check if sample exists</h3>
-
-    <p>
-      First, check if an appropriate sample entry exists for your solvent conditions.
-      If not, create one:
-    </p>
-
-    <pre><code>{
-  "sample_id": "smith_2025_buffers_10pctD2O",
-  "solvent": "10pct_D2O",
-  "authors": [
-    {
-      "name": "Jane Smith",
-      "orcid": "0000-0001-2345-6789",
-      "affiliation": "University of Example"
-    }
-  ],
-  "date_measured": "2025-01-15",
-  "reference_temperature_K": 298.15,
-  "reference_ionic_strength_M": 0.0,
-  "measurement_ranges": {
-    "pH": {"min": 4.0, "max": 10.0},
-    "temperature_K": {"min": 278, "max": 318},
-    "ionic_strength_M": {"min": 0.0, "max": 0.5}
-  },
-  "temperature_calibration": "Ethylene glycol chemical shift thermometer",
-  "pH_calibration": "Glass electrode with NIST-traceable buffers"
-}</code></pre>
-
-    <h3>Step 2: Create the buffer entry</h3>
-
-    <pre><code>{
-  "buffer_id": "smith_2025_imidazole_10pctD2O",
-  "buffer_name": "Imidazole",
-  "buffer_family": "imidazole",
-  "sample_id": "smith_2025_buffers_10pctD2O",
-  "version": "1.0",
-
-  "ionisation_states": 2,
-
-  "pKa_parameters": [
-    {
-      "pKa_index": 1,
-      "pKa": [7.00, 0.02],
-      "dH_kJ_mol": [-36.6, 0.5],
-      "dCp_J_mol_K": [-142, 10],
-      "protonated_charge": 1,
-      "ion_size_angstrom": 4.0
-    }
-  ],
-
-  "chemical_shifts": {
-    "1H": [
-      {
-        "resonance_id": "H2",
-        "description": "C2 proton (between nitrogens)",
-        "multiplicity": "singlet",
-        "limiting_shifts": [
-          {
-            "ionisation_state": 0,
-            "shift_ppm": [8.52, 0.01],
-            "temperature_coefficient_ppm_per_K": [-0.0045, 0.0003],
-            "ionic_strength_coefficient_ppm_per_M": [0.02, 0.01]
-          },
-          {
-            "ionisation_state": 1,
-            "shift_ppm": [7.68, 0.01],
-            "temperature_coefficient_ppm_per_K": [-0.0038, 0.0003],
-            "ionic_strength_coefficient_ppm_per_M": [0.03, 0.01]
-          }
-        ]
-      },
-      {
-        "resonance_id": "H4_H5",
-        "description": "C4/C5 protons (equivalent)",
-        "multiplicity": "singlet",
-        "limiting_shifts": [
-          {
-            "ionisation_state": 0,
-            "shift_ppm": [7.32, 0.01],
-            "temperature_coefficient_ppm_per_K": [-0.0030, 0.0003]
-          },
-          {
-            "ionisation_state": 1,
-            "shift_ppm": [7.05, 0.01],
-            "temperature_coefficient_ppm_per_K": [-0.0025, 0.0003]
-          }
-        ]
-      }
-    ],
-    "13C": [
-      {
-        "resonance_id": "C2",
-        "description": "C2 carbon",
-        "multiplicity": "singlet",
-        "limiting_shifts": [
-          {
-            "ionisation_state": 0,
-            "shift_ppm": [136.5, 0.1]
-          },
-          {
-            "ionisation_state": 1,
-            "shift_ppm": [134.8, 0.1]
-          }
-        ]
-      }
-    ]
-  },
-
-  "notes": "Imidazole buffer covering physiological pH range. H2 shows the largest pH-dependent shift."
-}</code></pre>
-
-    <h3>Step 3: Validate your entry</h3>
-
-    <div class="warning">
-      <strong>Important checks:</strong>
-      <ul>
-        <li>Ensure <code>ionisation_states</code> = number of pKa values + 1</li>
-        <li>Each resonance must have limiting shifts for states 0 to (ionisation_states - 1)</li>
-        <li>Values with uncertainties must be 2-element arrays <code>[value, uncertainty]</code></li>
-        <li>The <code>sample_id</code> must reference an existing sample</li>
-        <li>The <code>buffer_id</code> must be unique</li>
-      </ul>
-    </div>
-
-    <h3>Step 4: Submit your contribution</h3>
-
-    <ol>
-      <li>Fork the <a href="https://github.com/waudbygroup/nmr-pH">repository</a></li>
-      <li>Add your buffer to <code>public/database/current/database.json</code></li>
-      <li>Run the app locally to verify it loads correctly</li>
-      <li>Submit a pull request with your changes</li>
-    </ol>
 
     <h2>Further Information</h2>
 
