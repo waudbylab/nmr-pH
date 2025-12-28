@@ -380,9 +380,9 @@ function AppContent() {
       </nav>
 
       <header className="app-header">
-        <h1>NMR Buffer pH Estimation</h1>
+        <h1>NMR pH calibration</h1>
         <p className="subtitle">
-          Estimate sample pH from buffer chemical shifts using nonlinear least-squares fitting
+          pH estimation from chemical shifts
         </p>
         <span className="version">v0.1</span>
       </header>
