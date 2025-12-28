@@ -274,12 +274,16 @@
 
     <table>
       <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>sample_id</code></td><td>string</td><td>Unique identifier</td></tr>
+      <tr><td><code>sample_id</code></td><td>string</td><td>Unique identifier (format: author_year_description_solvent)</td></tr>
       <tr><td><code>solvent</code></td><td>enum</td><td>One of: "10pct_D2O", "100pct_D2O", "H2O", "other"</td></tr>
       <tr><td><code>authors</code></td><td>array</td><td>List of {name, orcid, affiliation}</td></tr>
-      <tr><td><code>reference_temperature_K</code></td><td>number</td><td>Reference temperature in Kelvin</td></tr>
+      <tr><td><code>reference_temperature_K</code></td><td>number</td><td>Reference temperature in Kelvin (typically 298.15 K)</td></tr>
       <tr><td><code>reference_ionic_strength_M</code></td><td>number</td><td>Reference ionic strength in M</td></tr>
       <tr><td><code>measurement_ranges</code></td><td>object</td><td>Valid ranges for pH, temperature, ionic strength</td></tr>
+      <tr><td><code>temperature_calibration</code></td><td>string</td><td>Method used for temperature calibration</td></tr>
+      <tr><td><code>pH_calibration</code></td><td>string</td><td>Electrode type and calibration standards used</td></tr>
+      <tr><td><code>ionic_strength_control</code></td><td>string</td><td>How ionic strength was controlled</td></tr>
+      <tr><td><code>raw_data_repository</code></td><td>object</td><td>Link to raw NMR data (URL, commit SHA, format)</td></tr>
     </table>
 
     <h3>Buffer Object</h3>
@@ -288,20 +292,194 @@
 
     <table>
       <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>buffer_id</code></td><td>string</td><td>Unique identifier</td></tr>
+      <tr><td><code>buffer_id</code></td><td>string</td><td>Unique identifier (format: author_year_name_solvent)</td></tr>
       <tr><td><code>buffer_name</code></td><td>string</td><td>Human-readable name</td></tr>
+      <tr><td><code>buffer_family</code></td><td>string</td><td>Chemical family (e.g., "phosphate", "amine")</td></tr>
       <tr><td><code>sample_id</code></td><td>string</td><td>Reference to parent sample</td></tr>
-      <tr><td><code>ionisation_states</code></td><td>integer</td><td>Number of ionisation states</td></tr>
-      <tr><td><code>pKa_parameters</code></td><td>array</td><td>pKa and thermodynamic data</td></tr>
-      <tr><td><code>chemical_shifts</code></td><td>object</td><td>Chemical shift data by nucleus</td></tr>
+      <tr><td><code>ionisation_states</code></td><td>integer</td><td>Number of ionisation states (N+1 for N pKa values)</td></tr>
+      <tr><td><code>pKa_parameters</code></td><td>array</td><td>pKa and thermodynamic data (one entry per pKa)</td></tr>
+      <tr><td><code>chemical_shifts</code></td><td>object</td><td>Chemical shift data organized by nucleus</td></tr>
+    </table>
+
+    <h3>Chemical Shift Deposition</h3>
+
+    <p>
+      Chemical shift information is stored for each nucleus with detailed metadata and coefficients
+      describing the environmental dependencies. Each resonance entry contains:
+    </p>
+
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>resonance_id</code></td><td>string</td><td>Unique identifier for the resonance (e.g., "H_alpha", "F_ortho")</td></tr>
+      <tr><td><code>description</code></td><td>string</td><td>Chemical description of the resonating group</td></tr>
+      <tr><td><code>multiplicity</code></td><td>string</td><td>Peak splitting pattern: "singlet", "doublet", "triplet", etc.</td></tr>
+      <tr><td><code>limiting_shifts</code></td><td>array</td><td>Array of shift values for each ionisation state</td></tr>
+    </table>
+
+    <p>Each entry in <code>limiting_shifts</code> specifies the chemical shift for one ionisation state:</p>
+
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>ionisation_state</code></td><td>integer</td><td>Index (0 = most protonated, N = fully deprotonated)</td></tr>
+      <tr><td><code>shift_ppm</code></td><td>[value, unc]</td><td>Chemical shift in ppm at reference conditions</td></tr>
+      <tr><td><code>temperature_coefficient_ppm_per_K</code></td><td>[value, unc]</td><td>Linear temperature coefficient (ppm/K)</td></tr>
+      <tr><td><code>ionic_strength_coefficient_ppm_per_M</code></td><td>[value, unc]</td><td>Linear ionic strength coefficient (ppm/M)</td></tr>
     </table>
 
     <div class="note">
-      <strong>Temperature and Ionic Strength Coefficients:</strong> The
-      <code>temperature_coefficient_ppm_per_K</code> and
-      <code>ionic_strength_coefficient_ppm_per_M</code> fields describe
-      how the limiting chemical shift changes with temperature or ionic strength for each
-      ionisation state.
+      <strong>Uncertainty Format:</strong> All values with uncertainties are represented as
+      <code>[value, uncertainty]</code> arrays. If uncertainty is unknown, use a single number.
+      Temperature and ionic strength coefficients are optional and may be omitted if not measured.
+    </div>
+
+    <h2>Worked Example: Adding a New Buffer</h2>
+
+    <p>
+      This example demonstrates how to add a new buffer (imidazole) with <sup>1</sup>H and <sup>13</sup>C NMR data
+      to the database. We'll create both a sample entry and a buffer entry.
+    </p>
+
+    <h3>Step 1: Create a Sample Entry</h3>
+
+    <p>First, define the experimental conditions under which measurements were performed:</p>
+
+    <pre><code>{
+  "sample_id": "smith_2025_imidazole_100pctD2O",
+  "solvent": "100pct_D2O",
+  "authors": [
+    {
+      "name": "Jane Smith",
+      "orcid": "0000-0001-2345-6789",
+      "affiliation": "Example University"
+    }
+  ],
+  "date_measured": "2025-01-15",
+
+  "reference_temperature_K": 298.15,
+  "reference_ionic_strength_M": 0.0,
+
+  "measurement_ranges": {
+    "pH": {"min": 5.0, "max": 9.0},
+    "temperature_K": {"min": 288, "max": 308},
+    "ionic_strength_M": {"min": 0.0, "max": 0.2}
+  },
+
+  "temperature_calibration": "Methanol chemical shift thermometer",
+  "pH_calibration": "Combination pH electrode calibrated at pH 4.00, 7.00, 10.00",
+  "ionic_strength_control": "KCl addition",
+
+  "raw_data_repository": {
+    "url": "https://github.com/example/data/imidazole_2025",
+    "commit_sha": "a1b2c3d4",
+    "format": "Bruker TopSpin format"
+  }
+}</code></pre>
+
+    <h3>Step 2: Create a Buffer Entry</h3>
+
+    <p>
+      Imidazole has a single pKa (~7.0), resulting in 2 ionisation states.
+      We'll include <sup>1</sup>H shifts for the C2, C4, and C5 protons, plus <sup>13</sup>C shifts.
+    </p>
+
+    <pre><code>{
+  "buffer_id": "smith_2025_imidazole_100pctD2O",
+  "buffer_name": "Imidazole",
+  "buffer_family": "imidazole",
+  "sample_id": "smith_2025_imidazole_100pctD2O",
+  "version": "1.0",
+
+  "ionisation_states": 2,
+
+  "pKa_parameters": [
+    {
+      "pKa_index": 1,
+      "pKa": [6.95, 0.01],
+      "dH_kJ_mol": [-36.4, 0.8],
+      "dCp_J_mol_K": [-140, 15],
+      "protonated_charge": 1,
+      "ion_size_angstrom": 4.0
+    }
+  ],
+
+  "chemical_shifts": {
+    "1H": [
+      {
+        "resonance_id": "H_C2",
+        "description": "C2-H proton (between nitrogens)",
+        "multiplicity": "singlet",
+        "limiting_shifts": [
+          {
+            "ionisation_state": 0,
+            "shift_ppm": [8.67, 0.01],
+            "temperature_coefficient_ppm_per_K": [-0.0053, 0.0003]
+          },
+          {
+            "ionisation_state": 1,
+            "shift_ppm": [7.82, 0.01],
+            "temperature_coefficient_ppm_per_K": [-0.0045, 0.0003]
+          }
+        ]
+      },
+      {
+        "resonance_id": "H_C4C5",
+        "description": "C4/C5-H protons",
+        "multiplicity": "singlet",
+        "limiting_shifts": [
+          {
+            "ionisation_state": 0,
+            "shift_ppm": [7.23, 0.01],
+            "temperature_coefficient_ppm_per_K": [-0.0028, 0.0002],
+            "ionic_strength_coefficient_ppm_per_M": [0.03, 0.01]
+          },
+          {
+            "ionisation_state": 1,
+            "shift_ppm": [6.98, 0.01],
+            "temperature_coefficient_ppm_per_K": [-0.0031, 0.0002],
+            "ionic_strength_coefficient_ppm_per_M": [0.05, 0.01]
+          }
+        ]
+      }
+    ],
+    "13C": [
+      {
+        "resonance_id": "C2",
+        "description": "C2 carbon",
+        "multiplicity": "singlet",
+        "limiting_shifts": [
+          {
+            "ionisation_state": 0,
+            "shift_ppm": [137.2, 0.1],
+            "temperature_coefficient_ppm_per_K": [-0.025, 0.002]
+          },
+          {
+            "ionisation_state": 1,
+            "shift_ppm": [135.8, 0.1],
+            "temperature_coefficient_ppm_per_K": [-0.022, 0.002]
+          }
+        ]
+      }
+    ]
+  },
+
+  "notes": "Standard imidazole buffer, commonly used in biological NMR. C4 and C5 protons are equivalent and appear as a single resonance."
+}</code></pre>
+
+    <h3>Step 3: Validate the Entry</h3>
+
+    <p>Before adding to the database, verify that:</p>
+    <ul>
+      <li>All IDs are unique and follow the naming convention</li>
+      <li>The number of ionisation states matches the pKa parameters (N pKa values → N+1 states)</li>
+      <li>Each resonance has shifts defined for all ionisation states</li>
+      <li>Uncertainties are provided where known</li>
+      <li>Temperature/ionic strength coefficients are included when measured</li>
+      <li>Peak multiplicity is specified for assignment guidance</li>
+    </ul>
+
+    <div class="warning">
+      <strong>Important:</strong> Always validate your JSON against the schema (<code>draft-schema.json</code>)
+      before submitting. Ensure raw NMR data is deposited in a permanent repository with proper version control.
     </div>
 
     <h2>Further Information</h2>

@@ -122,14 +122,21 @@ let html = `<!DOCTYPE html>
       width: 100%;
       border-collapse: collapse;
       margin: 1rem 0;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      display: block;
+    }
+
+    thead, tbody {
+      display: table;
+      width: 100%;
     }
 
     th, td {
-      text-align: left;
-      padding: 0.5rem 0.75rem;
+      text-align: center;
+      padding: 0.4rem 0.5rem;
       border: 1px solid var(--color-border);
-      vertical-align: top;
+      vertical-align: middle;
     }
 
     th {
@@ -137,7 +144,29 @@ let html = `<!DOCTYPE html>
       font-weight: 600;
     }
 
-    tr:nth-child(even) { background: #fafafa; }
+    th.group-header {
+      background: #d0e8f2;
+      font-weight: 700;
+    }
+
+    td:first-child, th:first-child {
+      text-align: left;
+    }
+
+    td:nth-child(2), th:nth-child(2) {
+      text-align: left;
+    }
+
+    tbody tr:nth-child(even) { background: #fafafa; }
+
+    .coeff-cell {
+      font-size: 0.8em;
+      color: var(--color-text-secondary);
+    }
+
+    .empty-cell {
+      color: var(--color-text-secondary);
+    }
 
     .nav {
       margin-bottom: 2rem;
@@ -299,50 +328,78 @@ for (const buffer of db.buffers) {
   for (const [nucleus, resonances] of Object.entries(buffer.chemical_shifts)) {
     html += `    <p><strong>${formatNucleus(nucleus)}</strong></p>
     <table>
-      <tr>
-        <th>Resonance</th>
-        <th>Description</th>
+      <thead>
+        <tr>
+          <th rowspan="2">Resonance</th>
+          <th rowspan="2">Description</th>
 `;
 
-    // Add column headers for each ionisation state
+    // Add group headers for each ionisation state
     for (let i = 0; i < buffer.ionisation_states; i++) {
-      html += `        <th>State ${i} (ppm)</th>
+      html += `          <th colspan="3" class="group-header">State ${i}</th>
 `;
     }
 
-    html += `      </tr>
+    html += `        </tr>
+        <tr>
+`;
+
+    // Add sub-headers (δ, αT, αI) for each state
+    for (let i = 0; i < buffer.ionisation_states; i++) {
+      html += `          <th>δ (ppm)</th>
+          <th>α<sub>T</sub> (ppm/K)</th>
+          <th>α<sub>I</sub> (ppm/M)</th>
+`;
+    }
+
+    html += `        </tr>
+      </thead>
+      <tbody>
 `;
 
     for (const res of resonances) {
-      html += `      <tr>
-        <td><code>${res.resonance_id}</code></td>
-        <td>${res.description || '-'}</td>
+      html += `        <tr>
+          <td><code>${res.resonance_id}</code></td>
+          <td>${res.description || '-'}</td>
 `;
 
-      // Get shifts for each state with coefficients
+      // Get shifts for each state with coefficients in separate columns
       for (let i = 0; i < buffer.ionisation_states; i++) {
         const stateShift = res.limiting_shifts.find(ls => ls.ionisation_state === i);
         if (stateShift) {
-          html += `        <td>${formatValue(stateShift.shift_ppm, 3)}`;
-          if (stateShift.temperature_coefficient_ppm_per_K) {
-            html += `<span class="coeff">α<sub>T</sub> = ${formatValue(stateShift.temperature_coefficient_ppm_per_K, 4)} ppm/K</span>`;
-          }
-          if (stateShift.ionic_strength_coefficient_ppm_per_M) {
-            html += `<span class="coeff">α<sub>I</sub> = ${formatValue(stateShift.ionic_strength_coefficient_ppm_per_M, 2)} ppm/M</span>`;
-          }
-          html += `</td>
+          // Chemical shift
+          html += `          <td>${formatValue(stateShift.shift_ppm, 3)}</td>
 `;
+          // Temperature coefficient
+          if (stateShift.temperature_coefficient_ppm_per_K) {
+            html += `          <td class="coeff-cell">${formatValue(stateShift.temperature_coefficient_ppm_per_K, 4)}</td>
+`;
+          } else {
+            html += `          <td class="empty-cell">-</td>
+`;
+          }
+          // Ionic strength coefficient
+          if (stateShift.ionic_strength_coefficient_ppm_per_M) {
+            html += `          <td class="coeff-cell">${formatValue(stateShift.ionic_strength_coefficient_ppm_per_M, 2)}</td>
+`;
+          } else {
+            html += `          <td class="empty-cell">-</td>
+`;
+          }
         } else {
-          html += `        <td>-</td>
+          html += `          <td class="empty-cell">-</td>
+          <td class="empty-cell">-</td>
+          <td class="empty-cell">-</td>
 `;
         }
       }
 
-      html += `      </tr>
+      html += `        </tr>
 `;
     }
 
-    html += `    </table>
+    html += `      </tbody>
+    </table>
 `;
   }
 
