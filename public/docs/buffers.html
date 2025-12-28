@@ -49,15 +49,17 @@
     }
 
     h3 { color: var(--color-accent); margin-top: 1.5rem; }
-    h4 { color: var(--color-text-secondary); margin-top: 1rem; }
+    h4 { color: var(--color-text-secondary); margin-top: 1rem; font-size: 1rem; }
 
-    a { color: var(--color-accent); }
+    a { color: var(--color-accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
 
     code {
       background: var(--color-code-bg);
       padding: 0.2em 0.4em;
       border-radius: 4px;
       font-size: 0.9em;
+      font-family: monospace;
     }
 
     table {
@@ -89,11 +91,8 @@
 
     .nav a {
       margin-right: 1.5rem;
-      text-decoration: none;
       font-weight: 500;
     }
-
-    .nav a:hover { text-decoration: underline; }
 
     .meta {
       background: var(--color-code-bg);
@@ -134,11 +133,19 @@
       font-weight: 500;
     }
 
-    .pka-info {
+    .pka-section {
       background: #e8f5e9;
-      padding: 0.75rem 1rem;
+      padding: 1rem;
       border-radius: 6px;
       margin-bottom: 1rem;
+    }
+
+    .pka-item {
+      margin-bottom: 0.75rem;
+    }
+
+    .pka-item:last-child {
+      margin-bottom: 0;
     }
 
     .timestamp {
@@ -149,6 +156,14 @@
     }
 
     sup { font-size: 0.7em; }
+    sub { font-size: 0.7em; }
+
+    .coeff-note {
+      font-size: 0.85em;
+      color: var(--color-text-secondary);
+      font-style: italic;
+      margin-top: 0.25rem;
+    }
   </style>
 </head>
 <body>
@@ -190,7 +205,6 @@
     </table>
 
     <h2>Buffers</h2>
-
     <div class="buffer-card">
       <h3>Trifluoroethylamine</h3>
       <div class="nuclei-badges">
@@ -205,13 +219,21 @@
         <strong>Ionisation States:</strong> 3
       </p>
 
-      <div class="pka-info">
-        <strong>pKa1:</strong> 6.45 ± 0.02 · ΔH = -42.5 ± 1.2 kJ/mol · ΔCp = -150 ± 20 J/(mol·K)<br>
-        <strong>pKa2:</strong> 9.12 ± 0.03 · ΔH = -38.2 ± 1.5 kJ/mol · ΔCp = -120 ± 25 J/(mol·K)<br>
+      <div class="pka-section">
+        <h4 style="margin-top: 0;">Thermodynamic Parameters</h4>
+        <div class="pka-item">
+          <strong>pKa1:</strong> 6.45 ± 0.02<br>
+          <span style="margin-left: 1.5rem;">ΔH = -42.5 ± 1.2 kJ/mol</span><br>
+          <span style="margin-left: 1.5rem;">ΔCp = -150 ± 20 J/(mol·K)</span><br>          <span style="margin-left: 1.5rem;">Ion size = 4.5 Å (for ionic strength corrections)</span><br>          <span style="margin-left: 1.5rem; color: #666; font-size: 0.9em;">Protonated charge: +1</span>
+        </div>
+        <div class="pka-item">
+          <strong>pKa2:</strong> 9.12 ± 0.03<br>
+          <span style="margin-left: 1.5rem;">ΔH = -38.2 ± 1.5 kJ/mol</span><br>
+          <span style="margin-left: 1.5rem;">ΔCp = -120 ± 25 J/(mol·K)</span><br>          <span style="margin-left: 1.5rem;">Ion size = 4.5 Å (for ionic strength corrections)</span><br>          <span style="margin-left: 1.5rem; color: #666; font-size: 0.9em;">Protonated charge: 0</span>
+        </div>
       </div>
 
       <h4>Chemical Shifts</h4>
-
       <p><strong><sup>1</sup>H</strong></p>
       <table>
         <tr>
@@ -224,12 +246,11 @@
         <tr>
           <td><code>H_alpha</code></td>
           <td>CH2 adjacent to amine</td>
-          <td>3.180 ± 0.005</td>
-          <td>3.420 ± 0.005</td>
-          <td>3.850 ± 0.005</td>
+          <td>3.18 ± 0.005<div class="coeff-note">α<sub>T</sub> = -0.0039 ± 0.0002 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 0.05 ± 0.01 ppm/M</div></td>
+          <td>3.42 ± 0.005<div class="coeff-note">α<sub>T</sub> = -0.0048 ± 0.0002 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 0.08 ± 0.01 ppm/M</div></td>
+          <td>3.85 ± 0.005<div class="coeff-note">α<sub>T</sub> = -0.0052 ± 0.0003 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 0.15 ± 0.02 ppm/M</div></td>
         </tr>
       </table>
-
       <p><strong><sup>19</sup>F</strong></p>
       <table>
         <tr>
@@ -242,21 +263,20 @@
         <tr>
           <td><code>F_ortho</code></td>
           <td>ortho fluorine</td>
-          <td>-66.200 ± 0.020</td>
-          <td>-64.800 ± 0.020</td>
-          <td>-62.400 ± 0.020</td>
+          <td>-66.2 ± 0.02<div class="coeff-note">α<sub>T</sub> = 0.0181 ± 0.0005 ppm/K</div><div class="coeff-note">α<sub>I</sub> = -0.1 ± 0.03 ppm/M</div></td>
+          <td>-64.8 ± 0.02<div class="coeff-note">α<sub>T</sub> = 0.0152 ± 0.0004 ppm/K</div><div class="coeff-note">α<sub>I</sub> = -0.3 ± 0.04 ppm/M</div></td>
+          <td>-62.4 ± 0.02<div class="coeff-note">α<sub>T</sub> = 0.0125 ± 0.0004 ppm/K</div><div class="coeff-note">α<sub>I</sub> = -0.8 ± 0.05 ppm/M</div></td>
         </tr>
         <tr>
           <td><code>F_meta</code></td>
           <td>meta fluorine</td>
-          <td>-60.500 ± 0.020</td>
-          <td>-59.100 ± 0.020</td>
-          <td>-58.200 ± 0.020</td>
+          <td>-60.5 ± 0.02<div class="coeff-note">α<sub>T</sub> = 0.0112 ± 0.0004 ppm/K</div></td>
+          <td>-59.1 ± 0.02<div class="coeff-note">α<sub>T</sub> = 0.0098 ± 0.0003 ppm/K</div></td>
+          <td>-58.2 ± 0.02<div class="coeff-note">α<sub>T</sub> = 0.0083 ± 0.0003 ppm/K</div><div class="coeff-note">α<sub>I</sub> = -0.5 ± 0.04 ppm/M</div></td>
         </tr>
       </table>
       <p><em>Example fluorinated buffer with two distinct 19F resonances. F_meta ionic strength dependence only measured for fully protonated state.</em></p>
     </div>
-
     <div class="buffer-card">
       <h3>Methylphosphonic acid</h3>
       <div class="nuclei-badges">
@@ -271,13 +291,21 @@
         <strong>Ionisation States:</strong> 3
       </p>
 
-      <div class="pka-info">
-        <strong>pKa1:</strong> 2.38 ± 0.02 · ΔH = -5.2 ± 0.8 kJ/mol · ΔCp = -80 ± 15 J/(mol·K)<br>
-        <strong>pKa2:</strong> 7.74 ± 0.02 · ΔH = -3.8 ± 0.6 kJ/mol · ΔCp = -120 ± 20 J/(mol·K)<br>
+      <div class="pka-section">
+        <h4 style="margin-top: 0;">Thermodynamic Parameters</h4>
+        <div class="pka-item">
+          <strong>pKa1:</strong> 2.38 ± 0.02<br>
+          <span style="margin-left: 1.5rem;">ΔH = -5.2 ± 0.8 kJ/mol</span><br>
+          <span style="margin-left: 1.5rem;">ΔCp = -80 ± 15 J/(mol·K)</span><br>          <span style="margin-left: 1.5rem;">Ion size = 4 Å (for ionic strength corrections)</span><br>          <span style="margin-left: 1.5rem; color: #666; font-size: 0.9em;">Protonated charge: 0</span>
+        </div>
+        <div class="pka-item">
+          <strong>pKa2:</strong> 7.74 ± 0.02<br>
+          <span style="margin-left: 1.5rem;">ΔH = -3.8 ± 0.6 kJ/mol</span><br>
+          <span style="margin-left: 1.5rem;">ΔCp = -120 ± 20 J/(mol·K)</span><br>          <span style="margin-left: 1.5rem;">Ion size = 4 Å (for ionic strength corrections)</span><br>          <span style="margin-left: 1.5rem; color: #666; font-size: 0.9em;">Protonated charge: -1</span>
+        </div>
       </div>
 
       <h4>Chemical Shifts</h4>
-
       <p><strong><sup>1</sup>H</strong></p>
       <table>
         <tr>
@@ -290,12 +318,11 @@
         <tr>
           <td><code>H_methyl</code></td>
           <td>Methyl protons (P-CH3)</td>
-          <td>1.480 ± 0.005</td>
-          <td>1.320 ± 0.005</td>
-          <td>1.180 ± 0.005</td>
+          <td>1.48 ± 0.005<div class="coeff-note">α<sub>T</sub> = -0.0015 ± 0.0002 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 0.02 ± 0.01 ppm/M</div></td>
+          <td>1.32 ± 0.005<div class="coeff-note">α<sub>T</sub> = -0.0018 ± 0.0002 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 0.03 ± 0.01 ppm/M</div></td>
+          <td>1.18 ± 0.005<div class="coeff-note">α<sub>T</sub> = -0.0022 ± 0.0003 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 0.05 ± 0.02 ppm/M</div></td>
         </tr>
       </table>
-
       <p><strong><sup>31</sup>P</strong></p>
       <table>
         <tr>
@@ -308,14 +335,13 @@
         <tr>
           <td><code>P_phosphonate</code></td>
           <td>Phosphorus signal</td>
-          <td>28.500 ± 0.050</td>
-          <td>22.400 ± 0.050</td>
-          <td>16.800 ± 0.050</td>
+          <td>28.5 ± 0.05<div class="coeff-note">α<sub>T</sub> = -0.025 ± 0.002 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 0.8 ± 0.1 ppm/M</div></td>
+          <td>22.4 ± 0.05<div class="coeff-note">α<sub>T</sub> = -0.032 ± 0.002 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 1.2 ± 0.15 ppm/M</div></td>
+          <td>16.8 ± 0.05<div class="coeff-note">α<sub>T</sub> = -0.04 ± 0.003 ppm/K</div><div class="coeff-note">α<sub>I</sub> = 1.8 ± 0.2 ppm/M</div></td>
         </tr>
       </table>
       <p><em>Example phosphonate buffer with 1H and 31P resonances. The 31P shift shows large pH dependence (~12 ppm range).</em></p>
     </div>
-
     <div class="timestamp">
       Generated: 2025-12-28
     </div>
