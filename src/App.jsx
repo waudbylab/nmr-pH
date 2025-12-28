@@ -479,7 +479,7 @@ function AppContent() {
             GitHub
           </a>
           {' | '}
-          <a href="https://waudbygroup.org" target="_blank" rel="noopener noreferrer">
+          <a href="https://waudbylab.org" target="_blank" rel="noopener noreferrer">
             Waudby Group
           </a>
           {' | '}
