@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { calculateSpectrometerFrequency } from './ReferencingPanel';
+import { calculateSpectrometerFrequency, calculateLinkedReferenceOffset } from './ReferencingPanel';
 import { DEFAULT_SHIFT_UNCERTAINTIES } from '../numerical/fitting';
 
 /**
@@ -19,12 +19,13 @@ function useDebounce(value, delay) {
 /**
  * Parse chemical shifts from text input.
  * One shift per line, numbers only.
+ * Lines starting with # are treated as comments and ignored.
  */
 function parseShifts(text) {
   return text
     .split('\n')
     .map(line => line.trim())
-    .filter(line => line.length > 0)
+    .filter(line => line.length > 0 && !line.startsWith('#'))
     .map(line => parseFloat(line))
     .filter(value => !isNaN(value));
 }
@@ -42,8 +43,10 @@ export function ShiftInputArea({
   onShiftUncertaintyChange,
   spectrometerFreq,
   protonFreq,
+  protonReferenceOffset = 0,
   onSpectrometerFreqChange,
   showFrequencyInput = false,
+  fittedReferenceOffset = null,
   debounceMs = 500
 }) {
   const [text, setText] = useState('');
@@ -78,6 +81,11 @@ export function ShiftInputArea({
     ? calculateSpectrometerFrequency(nucleus, protonFreq)
     : null;
 
+  // Calculate linked reference offset for heteronuclei
+  const linkedReferenceOffset = nucleus !== '1H' && protonFreq && spectrometerFreq
+    ? calculateLinkedReferenceOffset(nucleus, protonFreq, protonReferenceOffset, spectrometerFreq)
+    : null;
+
   return (
     <div className="shift-input-area">
       <label
@@ -90,7 +98,7 @@ export function ShiftInputArea({
         id={`shifts-${nucleus}`}
         value={text}
         onChange={handleChange}
-        placeholder={`Enter ${nucleus} shifts, one per line:\n2.45\n3.82\n3.15`}
+        placeholder={`Enter ${nucleus} shifts, one per line:\n2.45\n3.82\n# comment lines with #`}
         rows={6}
         spellCheck={false}
       />
@@ -135,6 +143,16 @@ export function ShiftInputArea({
         </span>
       </div>
 
+      {/* Show fitted reference offset for 1H */}
+      {nucleus === '1H' && fittedReferenceOffset !== null && (
+        <div className="fitted-reference-display">
+          <span className="fitted-ref-label">Fitted reference offset:</span>
+          <span className="fitted-ref-value">
+            {fittedReferenceOffset >= 0 ? '+' : ''}{fittedReferenceOffset.toFixed(3)} ppm
+          </span>
+        </div>
+      )}
+
       {showFrequencyInput && onSpectrometerFreqChange && (
         <div className="spectrometer-freq-input">
           <label>
@@ -158,9 +176,9 @@ export function ShiftInputArea({
               Expected from ¹H: {expectedFreq.toFixed(3)} MHz
             </span>
           )}
-          {nucleus !== '1H' && protonFreq && spectrometerFreq && (
-            <span className="linked-status hint">
-              Reference linked to ¹H
+          {linkedReferenceOffset !== null && (
+            <span className="linked-offset hint">
+              Reference offset: {linkedReferenceOffset >= 0 ? '+' : ''}{linkedReferenceOffset.toFixed(3)} ppm (linked to ¹H)
             </span>
           )}
         </div>

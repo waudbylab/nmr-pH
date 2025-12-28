@@ -44,7 +44,8 @@ export function NucleusTabPanel({
   fittedPH = null,
   phUncertainty = null,
   assignments = null,
-  referenceOffsets = {} // Reference offsets to subtract from buffer data
+  referenceOffsets = {}, // Reference offsets to subtract from buffer data
+  fittedReferenceOffsets = {} // Fitted reference offsets from result (for display only)
 }) {
   // Sort nuclei by mass
   const sortedNuclei = useMemo(() => sortNucleiByMass(nuclei), [nuclei]);
@@ -127,8 +128,10 @@ export function NucleusTabPanel({
                   onShiftUncertaintyChange={onShiftUncertaintyChange}
                   spectrometerFreq={spectrometerFreqs[nucleus]}
                   protonFreq={spectrometerFreqs['1H']}
+                  protonReferenceOffset={referenceOffsets['1H'] ?? 0}
                   onSpectrometerFreqChange={onSpectrometerFreqChange}
                   showFrequencyInput={showFrequencyInputs}
+                  fittedReferenceOffset={fittedReferenceOffsets[nucleus]}
                 />
               </div>
             </div>
