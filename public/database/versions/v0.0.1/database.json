@@ -1,7 +1,6 @@
 {
-  "database_version": "1.0",
-  "last_updated": "2024-12-22",
-  "doi": "10.5281/zenodo.XXXXXXX",
+  "database_version": "0.0.1",
+  "last_updated": "2025-01-01",
   
   "samples": [
     {
