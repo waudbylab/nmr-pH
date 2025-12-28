@@ -375,8 +375,9 @@ function AppContent() {
       <header className="app-header">
         <h1>NMR Buffer pH Estimation</h1>
         <p className="subtitle">
-          Estimate sample pH from buffer chemical shifts
+          Estimate sample pH from buffer chemical shifts using nonlinear least-squares fitting
         </p>
+        <span className="version">v0.1</span>
       </header>
 
       <main className="app-main">
@@ -475,16 +476,21 @@ function AppContent() {
       </main>
 
       <footer className="app-footer">
-        <p>
+        <div className="footer-links">
           <a href="https://github.com/waudbygroup/nmr-pH" target="_blank" rel="noopener noreferrer">
             GitHub
           </a>
-          {' | '}
-          <a href="https://waudbylab.org" target="_blank" rel="noopener noreferrer">
-            Waudby Group
+          <a href="./docs/" target="_blank" rel="noopener noreferrer">
+            Documentation
           </a>
-          {' | '}
-          UCL School of Pharmacy
+          <a href="./docs/buffers.html" target="_blank" rel="noopener noreferrer">
+            Buffer Database
+          </a>
+        </div>
+        <p className="footer-affiliation">
+          <a href="https://waudbylab.org" target="_blank" rel="noopener noreferrer">Waudby Group</a>
+          {' · '}
+          <a href="https://www.ucl.ac.uk/pharmacy" target="_blank" rel="noopener noreferrer">UCL School of Pharmacy</a>
         </p>
       </footer>
     </div>

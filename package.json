@@ -6,7 +6,8 @@
   "description": "NMR Buffer pH Estimation Web Application",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run generate-docs && vite build",
+    "generate-docs": "node scripts/generate-buffer-docs.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
