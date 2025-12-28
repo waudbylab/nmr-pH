@@ -118,18 +118,16 @@ let html = `<!DOCTYPE html>
       font-family: monospace;
     }
 
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
-      margin: 1rem 0;
       font-size: 0.85rem;
-      overflow-x: auto;
-      display: block;
-    }
-
-    thead, tbody {
-      display: table;
-      width: 100%;
+      table-layout: auto;
     }
 
     th, td {
@@ -137,6 +135,7 @@ let html = `<!DOCTYPE html>
       padding: 0.4rem 0.5rem;
       border: 1px solid var(--color-border);
       vertical-align: middle;
+      white-space: nowrap;
     }
 
     th {
@@ -151,10 +150,13 @@ let html = `<!DOCTYPE html>
 
     td:first-child, th:first-child {
       text-align: left;
+      white-space: normal;
     }
 
     td:nth-child(2), th:nth-child(2) {
       text-align: left;
+      white-space: normal;
+      min-width: 120px;
     }
 
     tbody tr:nth-child(even) { background: #fafafa; }
@@ -327,11 +329,12 @@ for (const buffer of db.buffers) {
   // Chemical shifts table for each nucleus
   for (const [nucleus, resonances] of Object.entries(buffer.chemical_shifts)) {
     html += `    <p><strong>${formatNucleus(nucleus)}</strong></p>
-    <table>
-      <thead>
-        <tr>
-          <th rowspan="2">Resonance</th>
-          <th rowspan="2">Description</th>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2">Resonance</th>
+            <th rowspan="2">Description</th>
 `;
 
     // Add group headers for each ionisation state
@@ -399,7 +402,8 @@ for (const buffer of db.buffers) {
     }
 
     html += `      </tbody>
-    </table>
+      </table>
+    </div>
 `;
   }
 
