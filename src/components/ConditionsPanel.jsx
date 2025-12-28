@@ -59,7 +59,18 @@ export function ConditionsPanel({
         <div className="condition-input">
           <label htmlFor="ionic-strength">
             Ionic Strength (M)
-            <span className="help-icon" title="Ionic strength is calculated as I = 0.5 × Σ(ci × zi²) where ci is the molar concentration and zi is the charge of each ion.&#10;&#10;Examples:&#10;• 50 mM HEPES, 100 mM NaCl: I ≈ 0.10 M&#10;• 100 mM phosphate buffer (pH 7): I ≈ 0.15 M&#10;• 20 mM Tris, 150 mM NaCl: I ≈ 0.15 M">ⓘ</span>
+            <span
+              className="help-icon"
+              data-tooltip="Ionic strength is calculated as I = 0.5 × Σ(ci × zi²) where ci is the molar concentration and zi is the charge of each ion.
+
+Examples:
+• 50 mM HEPES, 100 mM NaCl: I ≈ 0.10 M
+• 100 mM phosphate buffer (pH 7): I ≈ 0.15 M
+• 20 mM Tris, 150 mM NaCl: I ≈ 0.15 M"
+              tabIndex="0"
+              role="button"
+              aria-label="Ionic strength information"
+            >ⓘ</span>
           </label>
           <input
             type="number"
