@@ -449,6 +449,7 @@ function AppContent() {
               assignments={result?.success ? result.assignments : null}
               referenceOffsets={fittedReferenceOffsets ?? effectiveReferencingConfig?.referenceOffsets ?? {}}
               fittedReferenceOffsets={fittedReferenceOffsets ?? {}}
+              hasDSS={hasDSS}
             />
           </section>
         )}
