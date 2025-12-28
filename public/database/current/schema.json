@@ -1,0 +1,171 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NMR Buffer Database Schema",
+  "version": "0.1",
+  
+  "$defs": {
+    "valueWithUncertainty": {
+      "oneOf": [
+        {"type": "number"},
+        {
+          "type": "array",
+          "items": {"type": "number"},
+          "minItems": 2,
+          "maxItems": 2
+        }
+      ]
+    }
+  },
+  
+  "type": "object",
+  "required": ["database_version", "samples", "buffers"],
+  "properties": {
+    "database_version": {"type": "string"},
+    "last_updated": {"type": "string", "format": "date"},
+    "doi": {"type": "string"},
+    
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sample_id", "solvent", "authors", "reference_temperature_K", "reference_ionic_strength_M"],
+        "properties": {
+          "sample_id": {"type": "string"},
+          "solvent": {
+            "type": "string",
+            "enum": ["10pct_D2O", "100pct_D2O", "H2O", "other"]
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "affiliation"],
+              "properties": {
+                "name": {"type": "string"},
+                "orcid": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{3}[0-9X]$"},
+                "affiliation": {"type": "string"}
+              }
+            }
+          },
+          "date_measured": {"type": "string", "format": "date"},
+          "reference_temperature_K": {"type": "number"},
+          "reference_ionic_strength_M": {"type": "number"},
+          "measurement_ranges": {
+            "type": "object",
+            "required": ["pH", "temperature_K", "ionic_strength_M"],
+            "properties": {
+              "pH": {
+                "type": "object",
+                "required": ["min", "max"],
+                "properties": {
+                  "min": {"type": "number"},
+                  "max": {"type": "number"}
+                }
+              },
+              "temperature_K": {
+                "type": "object",
+                "required": ["min", "max"],
+                "properties": {
+                  "min": {"type": "number"},
+                  "max": {"type": "number"}
+                }
+              },
+              "ionic_strength_M": {
+                "type": "object",
+                "required": ["min", "max"],
+                "properties": {
+                  "min": {"type": "number"},
+                  "max": {"type": "number"}
+                }
+              }
+            }
+          },
+          "temperature_calibration": {"type": "string"},
+          "pH_calibration": {"type": "string"},
+          "ionic_strength_control": {"type": "string"},
+          "raw_data_repository": {
+            "type": "object",
+            "properties": {
+              "url": {"type": "string", "format": "uri"},
+              "commit_sha": {"type": "string"},
+              "format": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    
+    "buffers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["buffer_id", "buffer_name", "buffer_family", "sample_id", "ionisation_states", "pKa_parameters", "chemical_shifts"],
+        "properties": {
+          "buffer_id": {"type": "string"},
+          "buffer_name": {"type": "string"},
+          "buffer_family": {"type": "string"},
+          "sample_id": {"type": "string"},
+          "version": {"type": "string"},
+          "ionisation_states": {"type": "integer", "minimum": 1},
+          
+          "pKa_parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["pKa_index", "pKa"],
+              "properties": {
+                "pKa_index": {"type": "integer", "minimum": 1},
+                "pKa": {"$ref": "#/$defs/valueWithUncertainty"},
+                "dH_kJ_mol": {"$ref": "#/$defs/valueWithUncertainty"},
+                "dCp_J_mol_K": {"$ref": "#/$defs/valueWithUncertainty"},
+                "protonated_charge": {"type": "integer"},
+                "ionic_strength_model": {
+                  "type": "string",
+                  "enum": ["davies", "extended_debye_huckel", "empirical", "none"]
+                },
+                "ion_size_angstrom": {"type": "number"},
+                "ionic_strength_coefficient_per_M": {"$ref": "#/$defs/valueWithUncertainty"}
+              }
+            }
+          },
+          
+          "chemical_shifts": {
+            "type": "object",
+            "patternProperties": {
+              "^(1H|13C|15N|19F|31P)$": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["resonance_id", "limiting_shifts"],
+                  "properties": {
+                    "resonance_id": {"type": "string"},
+                    "description": {"type": "string"},
+                    "multiplicity": {
+                      "type": "string",
+                      "enum": ["singlet", "doublet", "triplet", "quartet", "multiplet"]
+                    },
+                    "limiting_shifts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["ionisation_state", "shift_ppm"],
+                        "properties": {
+                          "ionisation_state": {"type": "integer", "minimum": 0},
+                          "shift_ppm": {"$ref": "#/$defs/valueWithUncertainty"},
+                          "temperature_coefficient_ppm_per_K": {"$ref": "#/$defs/valueWithUncertainty"},
+                          "ionic_strength_coefficient_ppm_per_M": {"$ref": "#/$defs/valueWithUncertainty"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          
+          "notes": {"type": "string"}
+        }
+      }
+    }
+  }
+}

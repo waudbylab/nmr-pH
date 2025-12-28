@@ -17,9 +17,15 @@ export function useDatabase() {
 }
 
 /**
- * Default database URL - fetches from the same repository.
+ * Database URL configuration.
+ * In production, fetches from the hosted site.
+ * Falls back to local path for development or if production URL fails.
  */
-const DEFAULT_DATABASE_URL = './draft-database.json';
+const PRODUCTION_DATABASE_URL = 'https://waudbylab.org/nmr-pH/database/current/database.json';
+const LOCAL_DATABASE_URL = './database/current/database.json';
+
+// Use production URL by default, with local fallback
+const DEFAULT_DATABASE_URL = PRODUCTION_DATABASE_URL;
 
 /**
  * DatabaseLoader component.
@@ -38,14 +44,36 @@ export function DatabaseLoader({ children, databaseUrl = DEFAULT_DATABASE_URL })
         setLoading(true);
         setError(null);
 
-        // Try to fetch from URL
-        const response = await fetch(databaseUrl);
+        let data;
+        let fetchError = null;
 
-        if (!response.ok) {
-          throw new Error(`Failed to load database: ${response.status} ${response.statusText}`);
+        // Try primary URL first
+        try {
+          const response = await fetch(databaseUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to load database: ${response.status} ${response.statusText}`);
+          }
+          data = await response.json();
+        } catch (err) {
+          fetchError = err;
+          // If primary URL fails and we're using production URL, try local fallback
+          if (databaseUrl === PRODUCTION_DATABASE_URL) {
+            console.warn('Production database fetch failed, trying local fallback:', err);
+            try {
+              const response = await fetch(LOCAL_DATABASE_URL);
+              if (!response.ok) {
+                throw new Error(`Failed to load local database: ${response.status} ${response.statusText}`);
+              }
+              data = await response.json();
+              fetchError = null; // Clear error since local fetch succeeded
+            } catch (localErr) {
+              console.warn('Local database fetch also failed:', localErr);
+              throw fetchError; // Throw original error
+            }
+          } else {
+            throw err;
+          }
         }
-
-        const data = await response.json();
 
         if (!cancelled) {
           // Build maps for quick lookup
