@@ -182,14 +182,19 @@ section {
   transition: all 0.2s;
 }
 
-.buffer-tile:hover {
-  border-color: var(--color-accent);
+.buffer-tile:hover:not(.selected) {
+  border-color: #90caf9;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .buffer-tile.selected {
   border-color: var(--color-accent);
   background: #e3f2fd;
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.buffer-tile.selected:hover {
+  background: #bbdefb;
 }
 
 .buffer-name {

@@ -1,0 +1,240 @@
+{
+  "database_version": "0.0.1",
+  "last_updated": "2025-01-01",
+  
+  "samples": [
+    {
+      "sample_id": "waudby_2024_comprehensive_10pctD2O",
+      "solvent": "10pct_D2O",
+      "authors": [
+        {
+          "name": "Chris Waudby",
+          "orcid": "0000-0002-XXXX-XXXX",
+          "affiliation": "UCL School of Pharmacy"
+        }
+      ],
+      "date_measured": "2024-12-15",
+      
+      "reference_temperature_K": 298.15,
+      "reference_ionic_strength_M": 0.0,
+      
+      "measurement_ranges": {
+        "pH": {"min": 2.5, "max": 11.0},
+        "temperature_K": {"min": 283, "max": 310},
+        "ionic_strength_M": {"min": 0.0, "max": 0.3}
+      },
+      
+      "temperature_calibration": "Ethylene glycol chemical shift thermometer (Van Geet method), calibrated against external Pt100 probe to ±0.1 K",
+      
+      "pH_calibration": "Mettler Toledo InLab Expert Pro glass electrode, NIST-traceable buffers pH 4.01, 7.00, 10.01. D2O samples corrected via pD = pH_meter + 0.40",
+      
+      "ionic_strength_control": "NaCl addition, verified by conductivity measurements",
+      
+      "raw_data_repository": {
+        "url": "https://github.com/chriswaudby/nmr-buffers-data/tree/main/2024_comprehensive_10pctD2O",
+        "commit_sha": "abc123def456",
+        "format": "Bruker format with processing scripts"
+      }
+    }
+  ],
+  
+  "buffers": [
+    {
+      "buffer_id": "waudby_2024_tfea_10pctD2O",
+      "buffer_name": "Trifluoroethylamine",
+      "buffer_family": "tfea",
+      "sample_id": "waudby_2024_comprehensive_10pctD2O",
+      "version": "1.0",
+      
+      "ionisation_states": 3,
+      
+      "pKa_parameters": [
+        {
+          "pKa_index": 1,
+          "pKa": [6.45, 0.02],
+          "dH_kJ_mol": [-42.5, 1.2],
+          "dCp_J_mol_K": [-150, 20],
+          "protonated_charge": 1,
+          "ion_size_angstrom": 4.5
+        },
+        {
+          "pKa_index": 2,
+          "pKa": [9.12, 0.03],
+          "dH_kJ_mol": [-38.2, 1.5],
+          "dCp_J_mol_K": [-120, 25],
+          "protonated_charge": 0,
+          "ion_size_angstrom": 4.5
+        }
+      ],
+      
+      "chemical_shifts": {
+        "1H": [
+          {
+            "resonance_id": "H_alpha",
+            "description": "CH2 adjacent to amine",
+            "multiplicity": "triplet",
+            "limiting_shifts": [
+              {
+                "ionisation_state": 0,
+                "shift_ppm": [3.18, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0039, 0.0002],
+                "ionic_strength_coefficient_ppm_per_M": [0.05, 0.01]
+              },
+              {
+                "ionisation_state": 1,
+                "shift_ppm": [3.42, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0048, 0.0002],
+                "ionic_strength_coefficient_ppm_per_M": [0.08, 0.01]
+              },
+              {
+                "ionisation_state": 2,
+                "shift_ppm": [3.85, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0052, 0.0003],
+                "ionic_strength_coefficient_ppm_per_M": [0.15, 0.02]
+              }
+            ]
+          }
+        ],
+        "19F": [
+          {
+            "resonance_id": "F_ortho",
+            "description": "ortho fluorine",
+            "multiplicity": "doublet",
+            "limiting_shifts": [
+              {
+                "ionisation_state": 0,
+                "shift_ppm": [-66.2, 0.02],
+                "temperature_coefficient_ppm_per_K": [0.0181, 0.0005],
+                "ionic_strength_coefficient_ppm_per_M": [-0.1, 0.03]
+              },
+              {
+                "ionisation_state": 1,
+                "shift_ppm": [-64.8, 0.02],
+                "temperature_coefficient_ppm_per_K": [0.0152, 0.0004],
+                "ionic_strength_coefficient_ppm_per_M": [-0.3, 0.04]
+              },
+              {
+                "ionisation_state": 2,
+                "shift_ppm": [-62.4, 0.02],
+                "temperature_coefficient_ppm_per_K": [0.0125, 0.0004],
+                "ionic_strength_coefficient_ppm_per_M": [-0.8, 0.05]
+              }
+            ]
+          },
+          {
+            "resonance_id": "F_meta",
+            "description": "meta fluorine",
+            "multiplicity": "singlet",
+            "limiting_shifts": [
+              {
+                "ionisation_state": 0,
+                "shift_ppm": [-60.5, 0.02],
+                "temperature_coefficient_ppm_per_K": [0.0112, 0.0004]
+              },
+              {
+                "ionisation_state": 1,
+                "shift_ppm": [-59.1, 0.02],
+                "temperature_coefficient_ppm_per_K": [0.0098, 0.0003]
+              },
+              {
+                "ionisation_state": 2,
+                "shift_ppm": [-58.2, 0.02],
+                "temperature_coefficient_ppm_per_K": [0.0083, 0.0003],
+                "ionic_strength_coefficient_ppm_per_M": [-0.5, 0.04]
+              }
+            ]
+          }
+        ]
+      },
+      
+      "notes": "Example fluorinated buffer with two distinct 19F resonances. F_meta ionic strength dependence only measured for fully protonated state."
+    },
+    {
+      "buffer_id": "waudby_2024_methylphosphonate_10pctD2O",
+      "buffer_name": "Methylphosphonic acid",
+      "buffer_family": "phosphonate",
+      "sample_id": "waudby_2024_comprehensive_10pctD2O",
+      "version": "1.0",
+
+      "ionisation_states": 3,
+
+      "pKa_parameters": [
+        {
+          "pKa_index": 1,
+          "pKa": [2.38, 0.02],
+          "dH_kJ_mol": [-5.2, 0.8],
+          "dCp_J_mol_K": [-80, 15],
+          "protonated_charge": 0,
+          "ion_size_angstrom": 4.0
+        },
+        {
+          "pKa_index": 2,
+          "pKa": [7.74, 0.02],
+          "dH_kJ_mol": [-3.8, 0.6],
+          "dCp_J_mol_K": [-120, 20],
+          "protonated_charge": -1,
+          "ion_size_angstrom": 4.0
+        }
+      ],
+
+      "chemical_shifts": {
+        "1H": [
+          {
+            "resonance_id": "H_methyl",
+            "description": "Methyl protons (P-CH3)",
+            "multiplicity": "doublet",
+            "limiting_shifts": [
+              {
+                "ionisation_state": 0,
+                "shift_ppm": [1.48, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0015, 0.0002],
+                "ionic_strength_coefficient_ppm_per_M": [0.02, 0.01]
+              },
+              {
+                "ionisation_state": 1,
+                "shift_ppm": [1.32, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0018, 0.0002],
+                "ionic_strength_coefficient_ppm_per_M": [0.03, 0.01]
+              },
+              {
+                "ionisation_state": 2,
+                "shift_ppm": [1.18, 0.005],
+                "temperature_coefficient_ppm_per_K": [-0.0022, 0.0003],
+                "ionic_strength_coefficient_ppm_per_M": [0.05, 0.02]
+              }
+            ]
+          }
+        ],
+        "31P": [
+          {
+            "resonance_id": "P_phosphonate",
+            "description": "Phosphorus signal",
+            "multiplicity": "septet",
+            "limiting_shifts": [
+              {
+                "ionisation_state": 0,
+                "shift_ppm": [28.5, 0.05],
+                "temperature_coefficient_ppm_per_K": [-0.025, 0.002],
+                "ionic_strength_coefficient_ppm_per_M": [0.8, 0.1]
+              },
+              {
+                "ionisation_state": 1,
+                "shift_ppm": [22.4, 0.05],
+                "temperature_coefficient_ppm_per_K": [-0.032, 0.002],
+                "ionic_strength_coefficient_ppm_per_M": [1.2, 0.15]
+              },
+              {
+                "ionisation_state": 2,
+                "shift_ppm": [16.8, 0.05],
+                "temperature_coefficient_ppm_per_K": [-0.040, 0.003],
+                "ionic_strength_coefficient_ppm_per_M": [1.8, 0.2]
+              }
+            ]
+          }
+        ]
+      },
+
+      "notes": "Example phosphonate buffer with 1H and 31P resonances. The 31P shift shows large pH dependence (~12 ppm range)."
+    }
+  ]
+}
