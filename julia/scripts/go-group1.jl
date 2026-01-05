@@ -2,26 +2,37 @@
 Example: pH Indicator Analysis
 ==============================
 
-This script demonstrates how to use the pH indicator analysis module.
+This script demonstrates how to use the PHIndicators module.
 
 Before running, ensure you have the required packages:
     using Pkg
     Pkg.add(["CSV", "DataFrames", "LsqFit", "Measurements", "Plots", "Printf"])
 =#
 
-# Include the analysis module
-include("../src/pH_indicator_analysis.jl")
+# Add the src directory to the load path
+push!(LOAD_PATH, joinpath(@__DIR__, "..", "src"))
+
+using PHIndicators
 
 # ============================================================================
-# OPTION 1: Run complete analysis in one step
+# OPTION 1: Run complete analysis in one step (using iterated bootstrap)
 # ============================================================================
 
-# This is the simplest way to run the analysis
+# Define indicator properties for multi-pKa indicators
+# Maleate has two pKa values in the measured range
+indicator_props = Dict(
+    # Example of a 2-pKa indicator (uncomment to use)
+    # "maleate" => IndicatorProperties("maleate", "H", 2, 0, [1.9, 6.2], false)
+)
+
+# Run analysis with default single-pKa fitting
 results = run_analysis(
-    "../data/group1-rough-h2o.csv";
+    joinpath(@__DIR__, "..", "data", "group1-rough-h2o.csv");
     temperature=298.0,
     ionic_strength=0.3,
-    pKa_phosphate_lit=6.7,  # Literature value at this T, I
+    pKa_reference=6.7,  # Literature value for phosphate at this T, I
+    reference_indicator="phosphate",
+    # indicator_props=indicator_props,  # Uncomment to use multi-pKa fitting
     save_plots=true
 )
 
@@ -31,11 +42,14 @@ println("─"^40)
 
 # Initial fit for acetate
 acetate_init = results.initial_fits["acetate"]
-println("Acetate pKa (electrode pH): $(acetate_init.pKa)")
+println("Acetate pKa (electrode pH): $(get_pKa(acetate_init))")
 
 # Bootstrap fit for acetate
 acetate_boot = results.bootstrap.fits["acetate"]
-println("Acetate pKa (bootstrap):    $(acetate_boot.pKa_bootstrap)")
+println("Acetate pKa (bootstrap):    $(acetate_boot.pKa_bootstrap[1])")
+
+# Show calibration order
+println("\nCalibration order: ", join(results.bootstrap.calibration_order, " → "))
 
 # pH data
 println("\nFirst few rows of pH data:")
@@ -48,31 +62,31 @@ println(first(results.bootstrap.pH_data, 5))
 
 #=
 # Step 1: Load data
-data = load_indicator_data("your_data.csv")
+data = load_indicator_data(joinpath(@__DIR__, "..", "data", "group1-rough-h2o.csv"))
 
 # See what conditions are available
 list_conditions(data)
 
 # Step 2: Select one (T, I) condition
-subset = select_condition(data, temperature=298.0, ionic_strength="low")
+subset = select_condition(data, 298.0, 0.3)
 
 # Step 3: Initial fits using electrode pH
+# For 2-pKa indicators, provide indicator_props
 initial_fits = fit_all_indicators(subset)
 
 # Plot initial fits
 plot_initial_fits(subset, initial_fits; save_path="my_initial_fits.png")
 
-# Step 4: Bootstrap using literature phosphate pKa
-# The literature pKa should be corrected for your specific T and I
-# See the ionic strength explanation document for how to calculate this
-pKa_phosphate_lit = 7.20  # Example value - adjust for your conditions!
-
-bootstrap_result = bootstrap_pH(
-    subset, 
-    initial_fits; 
-    pKa_phosphate_lit = pKa_phosphate_lit,
-    σ_δ_phosphate = 0.01,  # ³¹P measurement uncertainty (ppm)
-    σ_δ_other = 0.005      # ¹H, ¹⁹F measurement uncertainty (ppm)
+# Step 4: Iterated bootstrap using literature phosphate pKa
+# The algorithm starts with phosphate, then calibrates indicators
+# in order of proximity to already-calibrated pKa values
+bootstrap_result = iterated_bootstrap_pH(
+    subset,
+    initial_fits;
+    reference_indicator = "phosphate",
+    pKa_reference = 6.7,      # Literature value at this T, I
+    σ_δ_reference = 0.01,     # ³¹P measurement uncertainty (ppm)
+    σ_δ_other = 0.005         # ¹H, ¹⁹F measurement uncertainty (ppm)
 )
 
 # Plot bootstrap results
@@ -83,44 +97,65 @@ pH_data = bootstrap_result.pH_data
 println(pH_data)
 
 # Access the refined pKa values
-for (ind, fit) in bootstrap_result.fits
-    println("$ind: pKa = $(fit.pKa_bootstrap)")
+for ind in bootstrap_result.calibration_order
+    fit = bootstrap_result.fits[ind]
+    tier = fit.is_reference ? "REF" : "T$(fit.calibration_tier)"
+    println("[$tier] $ind: pKa = $(fit.pKa_bootstrap[1])")
 end
 =#
 
 
 # ============================================================================
-# NOTES ON INTERPRETING OUTPUT
+# OPTION 3: Using 2-pKa indicators (e.g., maleate)
 # ============================================================================
 
 #=
-The analysis produces several outputs:
+# Define indicator properties with n_pKa=2 for diprotic indicators
+indicator_props = Dict(
+    "maleate" => IndicatorProperties(
+        "maleate",      # name (must match column name)
+        "H",            # nucleus
+        2,              # n_pKa
+        0,              # z_acid (charge of most protonated form)
+        [1.9, 6.2],     # literature pKa values (initial guesses)
+        false           # is_reference
+    )
+)
 
-1. INITIAL FITS (using electrode pH)
-   - pKa, δ_HA, δ_A for each indicator
-   - These use the nominal pH from the electrode as the independent variable
-   - Good for seeing the overall shape of the data
+# Run analysis with 2-pKa fitting enabled
+results_2pKa = run_analysis(
+    joinpath(@__DIR__, "..", "data", "group1-rough-h2o.csv");
+    temperature=298.0,
+    ionic_strength=0.3,
+    pKa_reference=6.7,
+    indicator_props=indicator_props,
+    save_plots=true
+)
+=#
 
-2. BOOTSTRAP FITS (using phosphate-derived pH)
-   - Phosphate pKa is FIXED to the literature value
-   - Other indicators are REFITTED using phosphate-derived pH
-   - The pKa values may shift slightly from initial fits
 
-3. pH COMPARISON TABLE
-   - Shows nominal (electrode) pH vs bootstrap (combined) pH
-   - The difference (Δ) shows systematic offset between electrode and NMR-derived pH
-   - At 298 K these should agree well; at other temperatures expect systematic shifts
+# ============================================================================
+# NOTES ON THE ITERATED BOOTSTRAP ALGORITHM
+# ============================================================================
 
-4. PLOTS
-   - initial_fits.png: Each indicator plotted vs electrode pH
-   - bootstrap_results.png: 
-     - Top left: electrode pH vs bootstrap pH (should be ~1:1)
-     - Top right: residuals (should be small and random)
-     - Bottom: Each indicator plotted vs bootstrap pH
+#=
+The iterated bootstrap algorithm improves pH calibration by:
 
-WHAT TO CHECK:
-- Initial fits should capture the sigmoidal shape well
-- Bootstrap pKa values should be similar to initial (within ~0.1 units)
-- pH comparison should show good correlation (R² > 0.99)
-- Residuals should be small (<0.1 pH units) and not show systematic patterns
+1. Starting with a reference indicator (phosphate) with known literature pKa
+2. Calculating pH values using only the reference indicator
+3. Finding the next uncalibrated indicator with estimated pKa closest to
+   any already-calibrated indicator
+4. Re-fitting that indicator's pKa using the current calibrated pH values
+5. Updating combined pH estimates using inverse-variance weighting
+6. Repeating steps 3-5 until all indicators are calibrated
+
+This approach ensures that:
+- Indicators are calibrated using pH values from the most reliable sources
+- pH estimates improve iteratively as more indicators are calibrated
+- The calibration "spreads out" from the reference in pH space
+
+The output shows:
+- Calibration order: which indicators were calibrated in which order
+- Tier numbers: 0=reference, 1=first calibrated, etc.
+- pKa changes: difference between electrode-based and bootstrap pKa
 =#
