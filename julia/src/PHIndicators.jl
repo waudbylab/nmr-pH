@@ -83,6 +83,7 @@ Arguments:
     pKa_reference: literature pKa for reference indicator at this (T, I) condition
     reference_indicator: name of reference indicator (default "phosphate")
     indicator_props: optional Dict{String,IndicatorProperties} for multi-pKa indicators
+    indicator_groups: optional Dict{String,Vector{String}} for grouping signals that share pKa values
     save_plots: if true, save plots to PNG files
 
 Returns a NamedTuple with all results.
@@ -93,6 +94,7 @@ function run_analysis(filename;
     pKa_reference,
     reference_indicator="phosphate",
     indicator_props=nothing,
+    indicator_groups=nothing,
     save_plots=true)
 
     println("\n" * "="^70)
@@ -112,7 +114,8 @@ function run_analysis(filename;
     subset = select_condition(data, temperature, ionic_strength)
 
     # Initial fits
-    initial_fits = fit_all_indicators(subset; indicator_props=indicator_props)
+    initial_fits = fit_all_indicators(subset; indicator_props=indicator_props,
+                                              indicator_groups=indicator_groups)
 
     if save_plots
         plot_initial_fits(subset, initial_fits; save_path="initial_fits.png")

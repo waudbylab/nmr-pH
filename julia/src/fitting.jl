@@ -63,9 +63,22 @@ function fit_indicator_1pKa(pH_values, delta_values;
 
     p0 = [pKa_guess, δ_HA_guess, δ_A_guess]
 
-    # Fit
+    # Fit with bounds to constrain pKa
     try
-        fit = curve_fit(henderson_hasselbalch, pH_values, delta_values, p0)
+        # Constrain pKa to ±1 unit of initial guess
+        lower = [pKa_guess - 1.0, -Inf, -Inf]
+        upper = [pKa_guess + 1.0, Inf, Inf]
+
+        # Also constrain chemical shifts for 1H to ±1 ppm of initial guess
+        if nucleus == "H"
+            lower[2] = δ_HA_guess - 1.0
+            upper[2] = δ_HA_guess + 1.0
+            lower[3] = δ_A_guess - 1.0
+            upper[3] = δ_A_guess + 1.0
+        end
+
+        fit = curve_fit(henderson_hasselbalch, pH_values, delta_values, p0;
+                       lower=lower, upper=upper)
 
         params = coef(fit)
         errors = stderror(fit)
@@ -128,11 +141,21 @@ function fit_indicator_2pKa(pH_values, delta_values;
 
     p0 = [pKa1_guess, pKa2_guess, δ_0_guess, δ_1_guess, δ_2_guess]
 
-    # Fit with bounds to ensure pKa1 < pKa2
+    # Fit with bounds to ensure pKa1 < pKa2 and constrain to initial guesses
     try
-        # Use lower/upper bounds
-        lower = [0.0, 0.0, -Inf, -Inf, -Inf]
-        upper = [14.0, 14.0, Inf, Inf, Inf]
+        # Constrain pKa values to ±1 unit of initial guesses
+        lower = [max(0.0, pKa1_guess - 1.0), max(0.0, pKa2_guess - 1.0), -Inf, -Inf, -Inf]
+        upper = [min(14.0, pKa1_guess + 1.0), min(14.0, pKa2_guess + 1.0), Inf, Inf, Inf]
+
+        # Also constrain chemical shifts for 1H to ±1 ppm of initial guesses
+        if nucleus == "H"
+            lower[3] = δ_0_guess - 1.0
+            upper[3] = δ_0_guess + 1.0
+            lower[4] = δ_1_guess - 1.0
+            upper[4] = δ_1_guess + 1.0
+            lower[5] = δ_2_guess - 1.0
+            upper[5] = δ_2_guess + 1.0
+        end
 
         fit = curve_fit(henderson_hasselbalch_2pKa, pH_values, delta_values, p0;
                        lower=lower, upper=upper)
@@ -169,26 +192,242 @@ function fit_indicator_2pKa(pH_values, delta_values;
 end
 
 """
-    fit_all_indicators(data; indicator_props=nothing) -> Dict{String, IndicatorFit}
+    fit_grouped_indicators_2pKa(pH_values_list, delta_values_list, indicator_names, nucleus_list;
+                                 pKa_guess=nothing) -> (pKa1, pKa2, δ_limits_list)
+
+Fit multiple signals from the same indicator molecule with shared pKa values.
+
+Arguments:
+    pH_values_list: vector of pH arrays (one per signal)
+    delta_values_list: vector of chemical shift arrays (one per signal)
+    indicator_names: vector of indicator names
+    nucleus_list: vector of nucleus types for each signal
+    pKa_guess: initial guess for [pKa1, pKa2]
+
+Returns:
+    pKa1, pKa2: shared pKa values (as Measurements)
+    δ_limits_list: vector of limiting shift arrays (one per signal)
+"""
+function fit_grouped_indicators_2pKa(pH_values_list, delta_values_list, indicator_names, nucleus_list;
+                                     pKa_guess=nothing)
+    n_signals = length(indicator_names)
+
+    # Initial guesses for pKa values
+    if pKa_guess === nothing
+        # Use first signal to estimate pKa values
+        pH_range = extrema(pH_values_list[1])
+        pKa1_guess = pH_range[1] + (pH_range[2] - pH_range[1]) / 3
+        pKa2_guess = pH_range[1] + 2 * (pH_range[2] - pH_range[1]) / 3
+    else
+        pKa1_guess, pKa2_guess = pKa_guess
+    end
+
+    # Ensure pKa1 < pKa2
+    if pKa1_guess > pKa2_guess
+        pKa1_guess, pKa2_guess = pKa2_guess, pKa1_guess
+    end
+
+    # Initial guesses for limiting shifts (3 per signal)
+    δ_guesses = []
+    for i in 1:n_signals
+        order = sortperm(pH_values_list[i])
+        δ_sorted = delta_values_list[i][order]
+        push!(δ_guesses, [δ_sorted[1], mean(delta_values_list[i]), δ_sorted[end]])
+    end
+
+    # Build parameter vector: [pKa1, pKa2, δ_0_1, δ_1_1, δ_2_1, δ_0_2, δ_1_2, δ_2_2, ...]
+    p0 = vcat([pKa1_guess, pKa2_guess], vcat(δ_guesses...)...)
+
+    # Concatenate all data
+    pH_all = vcat(pH_values_list...)
+    δ_all = vcat(delta_values_list...)
+
+    # Create signal index vector to track which data point belongs to which signal
+    signal_idx = vcat([fill(i, length(pH_values_list[i])) for i in 1:n_signals]...)
+
+    # Model function that uses shared pKa but signal-specific limiting shifts
+    function grouped_model(pH, p)
+        pKa1, pKa2 = p[1], p[2]
+        result = similar(pH)
+
+        for i in 1:n_signals
+            # Extract limiting shifts for this signal
+            δ_0 = p[2 + (i-1)*3 + 1]
+            δ_1 = p[2 + (i-1)*3 + 2]
+            δ_2 = p[2 + (i-1)*3 + 3]
+
+            # Find data points for this signal
+            mask = signal_idx .== i
+            pH_i = pH[mask]
+
+            # Calculate predictions
+            α = @. 10^(pH_i - pKa1)
+            β = @. 10^(2 * pH_i - pKa1 - pKa2)
+            D = @. 1 + α + β
+            result[mask] = @. (δ_0 + δ_1 * α + δ_2 * β) / D
+        end
+
+        return result
+    end
+
+    # Set up bounds
+    lower = [max(0.0, pKa1_guess - 1.0), max(0.0, pKa2_guess - 1.0)]
+    upper = [min(14.0, pKa1_guess + 1.0), min(14.0, pKa2_guess + 1.0)]
+
+    # Add bounds for limiting shifts
+    for i in 1:n_signals
+        if nucleus_list[i] == "H"
+            # Constrain 1H shifts to ±1 ppm
+            for j in 1:3
+                push!(lower, δ_guesses[i][j] - 1.0)
+                push!(upper, δ_guesses[i][j] + 1.0)
+            end
+        else
+            # No constraints for other nuclei
+            append!(lower, [-Inf, -Inf, -Inf])
+            append!(upper, [Inf, Inf, Inf])
+        end
+    end
+
+    try
+        fit = curve_fit(grouped_model, pH_all, δ_all, p0; lower=lower, upper=upper)
+        params = coef(fit)
+        errors = stderror(fit)
+
+        # Extract results
+        pKa1 = params[1] ± errors[1]
+        pKa2 = params[2] ± errors[2]
+
+        δ_limits_list = []
+        for i in 1:n_signals
+            δ_0 = params[2 + (i-1)*3 + 1] ± errors[2 + (i-1)*3 + 1]
+            δ_1 = params[2 + (i-1)*3 + 2] ± errors[2 + (i-1)*3 + 2]
+            δ_2 = params[2 + (i-1)*3 + 3] ± errors[2 + (i-1)*3 + 3]
+            push!(δ_limits_list, [δ_0, δ_1, δ_2])
+        end
+
+        return pKa1, pKa2, δ_limits_list
+    catch e
+        error("Grouped fitting failed: $e")
+    end
+end
+
+"""
+    fit_all_indicators(data; indicator_props=nothing, indicator_groups=nothing) -> Dict{String, IndicatorFit}
 
 Fit Henderson-Hasselbalch model to all indicators in the dataset.
 
 Arguments:
     data: DataFrame from select_condition
     indicator_props: optional Dict{String, IndicatorProperties} specifying n_pKa for each indicator
+    indicator_groups: optional Dict{String, Vector{String}} mapping group name to list of indicator names
+                      that should share the same pKa values (e.g., "HEPES" => ["HEPES_1", "HEPES_2", "HEPES_3", "HEPES_4"])
 
 Returns a dictionary mapping indicator names to IndicatorFit results.
 """
-function fit_all_indicators(data; indicator_props=nothing)
+function fit_all_indicators(data; indicator_props=nothing, indicator_groups=nothing)
     results = Dict{String,IndicatorFit}()
 
     indicators = unique(data.indicator)
+
+    # Track which indicators are part of groups
+    grouped_indicators = Set{String}()
+    if indicator_groups !== nothing
+        for (group_name, group_members) in indicator_groups
+            union!(grouped_indicators, group_members)
+        end
+    end
 
     println("\n" * "="^70)
     println("INITIAL HENDERSON-HASSELBALCH FITS (using electrode pH)")
     println("="^70)
 
+    # First, fit grouped indicators
+    if indicator_groups !== nothing
+        for (group_name, group_members) in indicator_groups
+            # Filter to only members that exist in the data
+            available_members = filter(m -> m in indicators, group_members)
+
+            if length(available_members) < 2
+                @warn "Group $group_name has fewer than 2 members in data, fitting individually"
+                continue
+            end
+
+            println("\nFitting grouped indicators: $(join(available_members, ", "))")
+
+            # Collect data for all group members
+            pH_values_list = []
+            delta_values_list = []
+            nucleus_list = []
+
+            for ind in available_members
+                subset = filter(row -> row.indicator == ind, data)
+                push!(pH_values_list, Float64.(subset.nominal_pH))
+                push!(delta_values_list, Float64.(subset.delta_obs))
+                push!(nucleus_list, subset.nucleus[1])
+            end
+
+            # Get pKa guess from first member's properties
+            pKa_guess = nothing
+            n_pKa = 2  # Assume groups are for 2-pKa indicators
+            if indicator_props !== nothing && haskey(indicator_props, available_members[1])
+                props = indicator_props[available_members[1]]
+                n_pKa = props.n_pKa
+                if !isempty(props.pKa_literature)
+                    pKa_guess = props.pKa_literature
+                end
+            end
+
+            try
+                if n_pKa == 2
+                    pKa1, pKa2, δ_limits_list = fit_grouped_indicators_2pKa(
+                        pH_values_list, delta_values_list, available_members, nucleus_list;
+                        pKa_guess=pKa_guess
+                    )
+
+                    # Create individual IndicatorFit objects for each member
+                    for (i, ind) in enumerate(available_members)
+                        n_points = length(pH_values_list[i])
+                        pH_range = extrema(pH_values_list[i])
+
+                        # Calculate RMSD for this signal
+                        params = [Measurements.value(pKa1), Measurements.value(pKa2),
+                                 Measurements.value(δ_limits_list[i][1]),
+                                 Measurements.value(δ_limits_list[i][2]),
+                                 Measurements.value(δ_limits_list[i][3])]
+                        predicted = henderson_hasselbalch_2pKa(pH_values_list[i], params)
+                        rmsd = sqrt(mean((delta_values_list[i] .- predicted) .^ 2))
+
+                        results[ind] = IndicatorFit(
+                            ind,
+                            nucleus_list[i],
+                            2,
+                            [pKa1, pKa2],
+                            δ_limits_list[i],
+                            n_points,
+                            rmsd,
+                            pH_range
+                        )
+                    end
+                else
+                    @warn "Grouped fitting only implemented for 2-pKa indicators, fitting individually"
+                end
+            catch e
+                @warn "Grouped fitting failed for $group_name: $e"
+                @warn "Fitting members individually instead"
+                # Fall back to individual fitting
+                setdiff!(grouped_indicators, available_members)
+            end
+        end
+    end
+
+    # Then fit ungrouped indicators individually
     for ind in sort(indicators)
+        # Skip if already fitted as part of a group
+        if ind in grouped_indicators
+            continue
+        end
+
         subset = filter(row -> row.indicator == ind, data)
         nucleus = subset.nucleus[1]
 
