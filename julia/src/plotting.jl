@@ -1,6 +1,95 @@
 # Plotting functions for pH indicator analysis
 
 """
+    print_bootstrap_table(bootstrap_result)
+
+Print a nicely formatted summary table of indicator pKas and chemical shifts after bootstrapping.
+"""
+function print_bootstrap_table(bootstrap_result)
+    fits = bootstrap_result.fits
+    calibration_order = haskey(bootstrap_result, :calibration_order) ?
+                        bootstrap_result.calibration_order :
+                        sort(collect(keys(fits)))
+
+    println("\n" * "="^100)
+    println("BOOTSTRAP PARAMETER SUMMARY")
+    println("="^100)
+
+    # Header for single-pKa indicators
+    println("\n─── Single-pKa Indicators ───")
+    println()
+    @printf("%-15s %4s %4s  %12s  %12s  %12s  %12s\n",
+        "Indicator", "Nuc", "Tier", "pKa", "δ(HA) ppm", "δ(A⁻) ppm", "Δδ ppm")
+    println("─"^85)
+
+    for ind in calibration_order
+        br = fits[ind]
+        br.n_pKa == 1 || continue
+
+        tier_str = br.is_reference ? "REF" : string(br.calibration_tier)
+
+        pKa_val = Measurements.value(br.pKa_bootstrap[1])
+        pKa_err = Measurements.uncertainty(br.pKa_bootstrap[1])
+
+        δ_HA_val = Measurements.value(br.δ_limits[1])
+        δ_HA_err = Measurements.uncertainty(br.δ_limits[1])
+
+        δ_A_val = Measurements.value(br.δ_limits[2])
+        δ_A_err = Measurements.uncertainty(br.δ_limits[2])
+
+        Δδ = abs(δ_A_val - δ_HA_val)
+
+        @printf("%-15s %4s %4s  %5.3f ± %4.3f  %6.3f ± %4.3f  %6.3f ± %4.3f  %6.3f\n",
+            br.indicator, br.nucleus, tier_str,
+            pKa_val, pKa_err,
+            δ_HA_val, δ_HA_err,
+            δ_A_val, δ_A_err,
+            Δδ)
+    end
+
+    # Check if there are any 2-pKa indicators
+    has_2pKa = any(fits[ind].n_pKa == 2 for ind in calibration_order)
+
+    if has_2pKa
+        println("\n─── Two-pKa Indicators ───")
+        println()
+        @printf("%-15s %4s %4s  %12s  %12s  %12s  %12s  %12s\n",
+            "Indicator", "Nuc", "Tier", "pKa₁", "pKa₂", "δ(H₂A) ppm", "δ(HA⁻) ppm", "δ(A²⁻) ppm")
+        println("─"^105)
+
+        for ind in calibration_order
+            br = fits[ind]
+            br.n_pKa == 2 || continue
+
+            tier_str = br.is_reference ? "REF" : string(br.calibration_tier)
+
+            pKa1_val = Measurements.value(br.pKa_bootstrap[1])
+            pKa1_err = Measurements.uncertainty(br.pKa_bootstrap[1])
+            pKa2_val = Measurements.value(br.pKa_bootstrap[2])
+            pKa2_err = Measurements.uncertainty(br.pKa_bootstrap[2])
+
+            δ_0_val = Measurements.value(br.δ_limits[1])
+            δ_0_err = Measurements.uncertainty(br.δ_limits[1])
+            δ_1_val = Measurements.value(br.δ_limits[2])
+            δ_1_err = Measurements.uncertainty(br.δ_limits[2])
+            δ_2_val = Measurements.value(br.δ_limits[3])
+            δ_2_err = Measurements.uncertainty(br.δ_limits[3])
+
+            @printf("%-15s %4s %4s  %5.3f ± %4.3f  %5.3f ± %4.3f  %6.3f ± %4.3f  %6.3f ± %4.3f  %6.3f ± %4.3f\n",
+                br.indicator, br.nucleus, tier_str,
+                pKa1_val, pKa1_err,
+                pKa2_val, pKa2_err,
+                δ_0_val, δ_0_err,
+                δ_1_val, δ_1_err,
+                δ_2_val, δ_2_err)
+        end
+    end
+
+    println("="^100)
+    println()
+end
+
+"""
     plot_initial_fits(data, results; save_path=nothing) -> Plot
 
 Create a multi-panel plot showing all indicator fits.
@@ -45,7 +134,7 @@ function plot_initial_fits(data, results::Dict{String,IndicatorFit}; save_path=n
             label="Fit ($pKa_label)",
             linewidth=2, color=:blue)
         scatter!(p, pH_data, δ_data,
-            label="Data", markersize=5, color=:red)
+            label="Data", markersize=5, markerstrokewidth=0, color=:red)
 
         xlabel!(p, "pH (electrode)")
         ylabel!(p, "δ (ppm)")
@@ -97,9 +186,9 @@ function plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
         end
     end
 
-    p_compare = scatter(pH_nom, pH_boot, yerror=pH_err,
+    p_compare = scatter(pH_nom, pH_boot .± pH_err,
         xlabel="pH (electrode)", ylabel="pH (bootstrap)",
-        label="Data", markersize=6,
+        label="Data", markersize=3, markerstrokewidth=0.5,
         title="pH Comparison")
 
     # Add 1:1 line
@@ -114,7 +203,7 @@ function plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
 
     p_resid = scatter(pH_nom, residuals,
         xlabel="pH (nominal)", ylabel="pH(boot) - pH(nom)",
-        label=nothing, markersize=6,
+        label=nothing, markersize=6, markerstrokewidth=0,
         title="pH Residuals")
     hline!(p_resid, [0], linestyle=:dash, color=:gray, label=nothing)
 
@@ -140,14 +229,16 @@ function plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
         br = fits[ind]
         ind_data_raw = filter(row -> row.indicator == ind, data)
 
-        # Get bootstrap pH values for this indicator's data points
+        # Get bootstrap pH values and uncertainties for this indicator's data points
         pH_boot_vals = Float64[]
+        pH_boot_errs = Float64[]
         δ_vals = Float64[]
 
         for row in eachrow(ind_data_raw)
             pH_row = filter(r -> r.nominal_pH == row.nominal_pH, pH_data)
             if nrow(pH_row) > 0 && !ismissing(pH_row.pH_combined[1])
                 push!(pH_boot_vals, Measurements.value(pH_row.pH_combined[1]))
+                push!(pH_boot_errs, Measurements.uncertainty(pH_row.pH_combined[1]))
                 push!(δ_vals, row.delta_obs)
             end
         end
@@ -178,8 +269,8 @@ function plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
         p = plot(pH_curve, δ_curve,
             label=pKa_label,
             linewidth=2, color=:blue)
-        scatter!(p, pH_boot_vals, δ_vals,
-            label="Data", markersize=5, color=:red)
+        scatter!(p, pH_boot_vals .± pH_boot_errs, δ_vals,
+            label="Data", markersize=3, markerstrokewidth=0.5, color=:red)
 
         xlabel!(p, "pH (bootstrap)")
         ylabel!(p, "δ (ppm)")

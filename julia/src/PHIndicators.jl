@@ -65,7 +65,7 @@ export get_pKa, get_δ_HA, get_δ_A, get_δ_mid
 export iterated_bootstrap_pH, bootstrap_pH
 
 # Export plotting functions
-export plot_initial_fits, plot_bootstrap_results
+export plot_initial_fits, plot_bootstrap_results, print_bootstrap_table
 
 # ============================================================================
 # CONVENIENCE FUNCTION: RUN COMPLETE ANALYSIS
@@ -122,6 +122,9 @@ function run_analysis(filename;
     bootstrap_result = iterated_bootstrap_pH(subset, initial_fits;
         reference_indicator=reference_indicator,
         pKa_reference=pKa_reference)
+
+    # Print parameter summary table
+    print_bootstrap_table(bootstrap_result)
 
     if save_plots
         plot_bootstrap_results(subset, bootstrap_result; save_path="bootstrap_results.png")

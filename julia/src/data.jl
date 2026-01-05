@@ -38,7 +38,10 @@ function load_indicator_data(filename)
             δ = row[col]
 
             # Skip missing values
-            ismissing(δ) && continue
+            if δ isa AbstractString
+                δ == "missing" && continue
+                δ = parse(Float64, string(δ))
+            end
 
             push!(rows, (
                 expt_number=row.expt_number,
