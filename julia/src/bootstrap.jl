@@ -338,23 +338,49 @@ end
 
 """
 Update combined pH using inverse-variance weighting of all calibrated indicators.
+
+The weighting scheme combines two factors:
+1. Inverse variance: more precise measurements get higher weight
+2. Distance from pKa: indicators near their pKa (±1.5 units) are more reliable
+
+This prevents indicators far from their pKa (which are near saturation and prone
+to extrapolation errors) from dominating the combined estimate.
 """
 function update_combined_pH!(pH_data, bootstrap_fits, calibrated)
     for i in 1:nrow(pH_data)
         estimates = Measurement{Float64}[]
+        indicators = String[]
 
         for ind in calibrated
             pH_est = pH_data[i, Symbol("pH_", ind)]
             if !ismissing(pH_est) && is_reliable(pH_est)
                 push!(estimates, pH_est)
+                push!(indicators, ind)
             end
         end
 
         if length(estimates) > 0
-            # Inverse-variance weighted combination
+            # Inverse-variance weighted combination with distance-from-pKa weighting
             values = [Measurements.value(e) for e in estimates]
             uncertainties = [Measurements.uncertainty(e) for e in estimates]
-            weights = 1 ./ uncertainties .^ 2
+            weights_variance = 1 ./ uncertainties .^ 2
+
+            # Quality weight based on distance from pKa
+            # Indicators are most reliable within ±1.5 pH units of their pKa
+            weights_quality = Float64[]
+            for (j, ind) in enumerate(indicators)
+                fit = bootstrap_fits[ind]
+                pKa = Measurements.value(fit.pKa_bootstrap[1])
+                pH_val = values[j]
+                dist = abs(pH_val - pKa)
+
+                # Gaussian weight: maximum at pKa, drops to ~0.1 at ±2.5 pH units
+                quality = exp(-(dist / 1.5)^2)
+                push!(weights_quality, quality)
+            end
+
+            # Combined weight = inverse variance × quality
+            weights = weights_variance .* weights_quality
 
             pH_combined = sum(values .* weights) / sum(weights)
             σ_combined = 1 / sqrt(sum(weights))
@@ -423,6 +449,8 @@ function print_pH_comparison(pH_data)
     @printf("%8s %12s %12s %10s %6s\n", "Nominal", "Bootstrap", "σ", "Δ(pH)", "n_ind")
     println("─"^70)
 
+    warnings = String[]
+
     for row in eachrow(pH_data)
         if ismissing(row.pH_combined)
             @printf("%8.2f %12s %12s %10s %6s\n", row.nominal_pH, "—", "—", "—", "0")
@@ -443,9 +471,35 @@ function print_pH_comparison(pH_data)
             end
 
             @printf("%8.2f %12.3f %12.3f %+10.3f %6d\n", row.nominal_pH, pH_boot, σ, Δ, n_ind)
+
+            # Collect warnings for extreme conditions
+            if n_ind < 4
+                push!(warnings, @sprintf("  ⚠ pH %.2f: Only %d indicators contributing (low confidence)",
+                                        row.nominal_pH, n_ind))
+            end
+            if σ > 0.10
+                push!(warnings, @sprintf("  ⚠ pH %.2f: High uncertainty (σ = %.3f)",
+                                        row.nominal_pH, σ))
+            end
+            if abs(Δ) > 0.30
+                push!(warnings, @sprintf("  ⚠ pH %.2f: Large correction (Δ = %+.3f)",
+                                        row.nominal_pH, Δ))
+            end
         end
     end
     println("─"^70)
+
+    # Print warnings if any
+    if !isempty(warnings)
+        println("\nWARNINGS:")
+        for warn in warnings
+            println(warn)
+        end
+        println("\nNote: Results at extreme pH may be less reliable due to:")
+        println("  - Fewer indicators in their sensitive range")
+        println("  - Extrapolation beyond measured chemical shift limits")
+        println("  - Consider adding buffers with pKa values at extremes")
+    end
 end
 
 # Keep the old bootstrap_pH function for backwards compatibility
