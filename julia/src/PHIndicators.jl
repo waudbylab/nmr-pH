@@ -124,7 +124,8 @@ function run_analysis(filename;
     # Iterated bootstrap
     bootstrap_result = iterated_bootstrap_pH(subset, initial_fits;
         reference_indicator=reference_indicator,
-        pKa_reference=pKa_reference)
+        pKa_reference=pKa_reference,
+        indicator_groups=indicator_groups)
 
     # Print parameter summary table
     print_bootstrap_table(bootstrap_result)

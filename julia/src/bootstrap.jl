@@ -35,6 +35,7 @@ Arguments:
     initial_fits: Dict from fit_all_indicators
     reference_indicator: name of reference indicator (default "phosphate")
     pKa_reference: literature pKa for reference at this (T, I) condition
+    indicator_groups: optional Dict{String,Vector{String}} for grouped indicators that share pKa
     σ_δ: Dict mapping nucleus names to measurement uncertainties (ppm).
          Defaults to DEFAULT_σ_δ. Keys should be "H", "C", "N", "F", "P" etc.
     pKa_window: only use data within ±pKa_window pH units of the pKa for bootstrap
@@ -48,12 +49,23 @@ Returns a NamedTuple with:
 function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
     reference_indicator="phosphate",
     pKa_reference,
+    indicator_groups=nothing,
     σ_δ::Dict{String,Float64}=DEFAULT_σ_δ,
     pKa_window::Float64=1.5)
 
     # Check reference indicator is present
     if !haskey(initial_fits, reference_indicator)
         error("Reference indicator '$reference_indicator' not found. Available: $(keys(initial_fits))")
+    end
+
+    # Build reverse mapping from indicator to group name
+    indicator_to_group = Dict{String,String}()
+    if indicator_groups !== nothing
+        for (group_name, members) in indicator_groups
+            for member in members
+                indicator_to_group[member] = group_name
+            end
+        end
     end
 
     ref_fit = initial_fits[reference_indicator]
@@ -66,6 +78,9 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
     println("Reference: $reference_indicator with literature pKa = $pKa_lit")
     println("pKa window: ±$pKa_window pH units")
     println("Shift uncertainties (σ_δ): ", σ_δ)
+    if !isempty(indicator_to_group)
+        println("Grouped indicators: ", join(["$k: $(indicator_groups[k])" for k in keys(indicator_groups)], ", "))
+    end
 
     # -------------------------------------------------------------------------
     # Initialize pH_data DataFrame with unique pH values
@@ -143,6 +158,7 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
     # Step 2: Iteratively calibrate other indicators
     # -------------------------------------------------------------------------
     uncalibrated = setdiff(Set(keys(initial_fits)), calibrated)
+    calibrated_groups = Set{String}()  # Track which groups have been calibrated
     tier = 1
 
     while !isempty(uncalibrated)
@@ -171,85 +187,132 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
             break
         end
 
-        # Calibrate this indicator
-        init_fit = initial_fits[best_ind]
-        ind_data = filter(row -> row.indicator == best_ind, data)
+        # Check if this indicator is part of a group
+        if haskey(indicator_to_group, best_ind)
+            group_name = indicator_to_group[best_ind]
+            group_members = filter(m -> m in keys(initial_fits), indicator_groups[group_name])
 
-        # Get the initial pKa estimate for filtering by proximity
-        # For 2-pKa indicators, use both pKa values for the window
-        pKa_centers = [Measurements.value(pKa) for pKa in init_fit.pKa]
+            # Calibrate the whole group together
+            results_dict = refit_grouped_indicators_2pKa(
+                group_members, data, initial_fits, pH_data, pKa_window, tier
+            )
 
-        # Collect data points with reliable combined pH that are within pKa_window of any pKa
-        pH_true_vals = Measurement{Float64}[]
-        δ_vals = Float64[]
-        n_outside_window = 0
+            if !isempty(results_dict)
+                # Add all group members to calibrated set
+                for (ind, result) in results_dict
+                    bootstrap_fits[ind] = result
+                    push!(calibrated, ind)
+                    push!(calibration_order, ind)
+                    delete!(uncalibrated, ind)
 
-        for row in eachrow(ind_data)
-            pH_row_idx = findfirst(r -> r.nominal_pH == row.nominal_pH, eachrow(pH_data))
+                    # Update pH estimates from this indicator
+                    ind_data = filter(row -> row.indicator == ind, data)
+                    σ_δ_ind = get_σ_δ(σ_δ, initial_fits[ind].nucleus)
+                    update_indicator_pH!(pH_data, ind, ind_data, result, σ_δ_ind)
+                end
 
-            if pH_row_idx === nothing
-                continue
+                push!(calibrated_groups, group_name)
+
+                # Update combined pH
+                update_combined_pH!(pH_data, bootstrap_fits, calibrated)
+
+                n_reliable = count(row -> !ismissing(row.pH_combined) && is_reliable(row.pH_combined),
+                                  eachrow(pH_data))
+
+                # Use first member for pKa display
+                first_result = results_dict[group_members[1]]
+                pKa_str = @sprintf("%.3f, %.3f",
+                    Measurements.value(first_result.pKa_bootstrap[1]),
+                    Measurements.value(first_result.pKa_bootstrap[2]))
+
+                println("Tier $tier: $group_name group ($(join(group_members, ", "))) (pKa = $pKa_str) → $n_reliable reliable pH values")
+            else
+                # Group fitting failed, remove from uncalibrated
+                for member in group_members
+                    delete!(uncalibrated, member)
+                end
             end
-
-            pH_combined = pH_data.pH_combined[pH_row_idx]
-
-            if ismissing(pH_combined) || !is_reliable(pH_combined)
-                continue
-            end
-
-            # Check if pH is within pKa_window of any pKa
-            pH_val = Measurements.value(pH_combined)
-            within_window = any(abs(pH_val - pKa_c) <= pKa_window for pKa_c in pKa_centers)
-
-            if !within_window
-                n_outside_window += 1
-                continue
-            end
-
-            push!(pH_true_vals, pH_combined)
-            push!(δ_vals, row.delta_obs)
-        end
-
-        n_usable = length(pH_true_vals)
-
-        if n_usable < 3
-            @warn "Insufficient reliable pH values for $best_ind ($n_usable points within pKa window, $n_outside_window excluded), skipping"
-            delete!(uncalibrated, best_ind)
-            continue
-        end
-
-        # Fit pKa using calibrated pH values
-        pH_true_values = [Measurements.value(pH) for pH in pH_true_vals]
-
-        if init_fit.n_pKa == 1
-            result = refit_indicator_1pKa(best_ind, init_fit, pH_true_values, δ_vals,
-                                          n_usable, tier)
         else
-            result = refit_indicator_2pKa(best_ind, init_fit, pH_true_values, δ_vals,
-                                          n_usable, tier)
+            # Individual indicator (not part of a group)
+            init_fit = initial_fits[best_ind]
+            ind_data = filter(row -> row.indicator == best_ind, data)
+
+            # Get the initial pKa estimate for filtering by proximity
+            # For 2-pKa indicators, use both pKa values for the window
+            pKa_centers = [Measurements.value(pKa) for pKa in init_fit.pKa]
+
+            # Collect data points with reliable combined pH that are within pKa_window of any pKa
+            pH_true_vals = Measurement{Float64}[]
+            δ_vals = Float64[]
+            n_outside_window = 0
+
+            for row in eachrow(ind_data)
+                pH_row_idx = findfirst(r -> r.nominal_pH == row.nominal_pH, eachrow(pH_data))
+
+                if pH_row_idx === nothing
+                    continue
+                end
+
+                pH_combined = pH_data.pH_combined[pH_row_idx]
+
+                if ismissing(pH_combined) || !is_reliable(pH_combined)
+                    continue
+                end
+
+                # Check if pH is within pKa_window of any pKa
+                pH_val = Measurements.value(pH_combined)
+                within_window = any(abs(pH_val - pKa_c) <= pKa_window for pKa_c in pKa_centers)
+
+                if !within_window
+                    n_outside_window += 1
+                    continue
+                end
+
+                push!(pH_true_vals, pH_combined)
+                push!(δ_vals, row.delta_obs)
+            end
+
+            n_usable = length(pH_true_vals)
+
+            if n_usable < 3
+                @warn "Insufficient reliable pH values for $best_ind ($n_usable points within pKa window, $n_outside_window excluded), skipping"
+                delete!(uncalibrated, best_ind)
+                continue
+            end
+
+            # Fit pKa using calibrated pH values
+            pH_true_values = [Measurements.value(pH) for pH in pH_true_vals]
+
+            if init_fit.n_pKa == 1
+                result = refit_indicator_1pKa(best_ind, init_fit, pH_true_values, δ_vals,
+                                              n_usable, tier)
+            else
+                result = refit_indicator_2pKa(best_ind, init_fit, pH_true_values, δ_vals,
+                                              n_usable, tier)
+            end
+
+            bootstrap_fits[best_ind] = result
+            push!(calibrated, best_ind)
+            push!(calibration_order, best_ind)
+            delete!(uncalibrated, best_ind)
+
+            # Update pH estimates from this indicator
+            σ_δ_ind = get_σ_δ(σ_δ, init_fit.nucleus)
+            update_indicator_pH!(pH_data, best_ind, ind_data, result, σ_δ_ind)
+
+            # Update combined pH
+            update_combined_pH!(pH_data, bootstrap_fits, calibrated)
+
+            n_reliable = count(row -> !ismissing(row.pH_combined) && is_reliable(row.pH_combined),
+                              eachrow(pH_data))
+            pKa_str = result.n_pKa == 1 ?
+                @sprintf("%.3f", Measurements.value(result.pKa_bootstrap[1])) :
+                @sprintf("%.3f, %.3f", Measurements.value(result.pKa_bootstrap[1]),
+                                       Measurements.value(result.pKa_bootstrap[2]))
+
+            window_note = n_outside_window > 0 ? ", $n_outside_window pts outside pKa window" : ""
+            println("Tier $tier: $best_ind (pKa = $pKa_str, $n_usable pts$window_note) → $n_reliable reliable pH values")
         end
-
-        bootstrap_fits[best_ind] = result
-        push!(calibrated, best_ind)
-        push!(calibration_order, best_ind)
-        delete!(uncalibrated, best_ind)
-
-        # Update pH estimates from this indicator
-        σ_δ_ind = get_σ_δ(σ_δ, init_fit.nucleus)
-        update_indicator_pH!(pH_data, best_ind, ind_data, result, σ_δ_ind)
-
-        # Update combined pH
-        update_combined_pH!(pH_data, bootstrap_fits, calibrated)
-
-        n_reliable = count(row -> !ismissing(row.pH_combined) && is_reliable(row.pH_combined),
-                          eachrow(pH_data))
-        pKa_str = result.n_pKa == 1 ?
-            @sprintf("%.3f", Measurements.value(result.pKa_bootstrap[1])) :
-            @sprintf("%.3f, %.3f", Measurements.value(result.pKa_bootstrap[1]),
-                                   Measurements.value(result.pKa_bootstrap[2]))
-
-        window_note = n_outside_window > 0 ? ", $n_outside_window pts outside pKa window" : ""
-        println("Tier $tier: $best_ind (pKa = $pKa_str, $n_usable pts$window_note) → $n_reliable reliable pH values")
 
         tier += 1
     end
@@ -294,6 +357,135 @@ function refit_indicator_1pKa(indicator, init_fit, pH_values, δ_values, n_usabl
             n_usable, false;
             calibration_tier=tier
         )
+    end
+end
+
+"""
+Refit a group of indicators with shared pKa values using calibrated pH.
+Returns a Dict mapping indicator names to BootstrapResult.
+"""
+function refit_grouped_indicators_2pKa(group_members, data, initial_fits, pH_data, pKa_window, tier)
+    # Collect data for all group members
+    pH_values_list = []
+    δ_values_list = []
+    indicator_names = []
+    n_outside_window_total = 0
+
+    # Use first member's pKa for window filtering
+    first_fit = initial_fits[group_members[1]]
+    pKa_centers = [Measurements.value(pKa) for pKa in first_fit.pKa]
+
+    for ind in group_members
+        ind_data = filter(row -> row.indicator == ind, data)
+        pH_vals = Measurement{Float64}[]
+        δ_vals = Float64[]
+
+        for row in eachrow(ind_data)
+            pH_row_idx = findfirst(r -> r.nominal_pH == row.nominal_pH, eachrow(pH_data))
+
+            if pH_row_idx === nothing
+                continue
+            end
+
+            pH_combined = pH_data.pH_combined[pH_row_idx]
+
+            if ismissing(pH_combined) || !is_reliable(pH_combined)
+                continue
+            end
+
+            # Check if pH is within pKa_window of any pKa
+            pH_val = Measurements.value(pH_combined)
+            within_window = any(abs(pH_val - pKa_c) <= pKa_window for pKa_c in pKa_centers)
+
+            if !within_window
+                n_outside_window_total += 1
+                continue
+            end
+
+            push!(pH_vals, pH_combined)
+            push!(δ_vals, row.delta_obs)
+        end
+
+        push!(pH_values_list, [Measurements.value(pH) for pH in pH_vals])
+        push!(δ_values_list, δ_vals)
+        push!(indicator_names, ind)
+    end
+
+    # Check we have enough data
+    total_points = sum(length.(pH_values_list))
+    if total_points < 6
+        @warn "Insufficient data for group $(join(group_members, ", ")): only $total_points points"
+        return Dict{String,BootstrapResult}()
+    end
+
+    # Get limiting shifts from initial fits (these are fixed)
+    δ_limits_fixed = []
+    for ind in group_members
+        fit = initial_fits[ind]
+        push!(δ_limits_fixed, [
+            Measurements.value(fit.δ_limits[1]),
+            Measurements.value(fit.δ_limits[2]),
+            Measurements.value(fit.δ_limits[3])
+        ])
+    end
+
+    # Initial guesses for pKa
+    pKa1_guess = Measurements.value(first_fit.pKa[1])
+    pKa2_guess = Measurements.value(first_fit.pKa[2])
+
+    # Concatenate all data
+    pH_all = vcat(pH_values_list...)
+    δ_all = vcat(δ_values_list...)
+    n_signals = length(group_members)
+    signal_idx = vcat([fill(i, length(pH_values_list[i])) for i in 1:n_signals]...)
+
+    # Model function with shared pKa but signal-specific limiting shifts
+    function grouped_model(pH, p)
+        pKa1, pKa2 = p[1], p[2]
+        result = similar(pH)
+
+        for i in 1:n_signals
+            δ_0, δ_1, δ_2 = δ_limits_fixed[i]
+            mask = signal_idx .== i
+            pH_i = pH[mask]
+
+            α = @. 10^(pH_i - pKa1)
+            β = @. 10^(2 * pH_i - pKa1 - pKa2)
+            D = @. 1 + α + β
+            result[mask] = @. (δ_0 + δ_1 * α + δ_2 * β) / D
+        end
+
+        return result
+    end
+
+    try
+        fit = curve_fit(grouped_model, pH_all, δ_all, [pKa1_guess, pKa2_guess])
+        pKa1_new = coef(fit)[1] ± stderror(fit)[1]
+        pKa2_new = coef(fit)[2] ± stderror(fit)[2]
+
+        # Create BootstrapResult for each member
+        results = Dict{String,BootstrapResult}()
+        for ind in group_members
+            init_fit = initial_fits[ind]
+            ind_subset = filter(row -> row.indicator == ind, data)
+            n_pts = nrow(ind_subset)
+
+            results[ind] = BootstrapResult(
+                ind, init_fit.nucleus,
+                2,
+                init_fit.pKa,                    # initial
+                [pKa1_new, pKa2_new],            # bootstrap (shared)
+                init_fit.δ_limits,               # limiting shifts
+                n_pts,
+                false,
+                tier
+            )
+        end
+
+        return results
+    catch e
+        @warn "Grouped bootstrap fitting failed for $(join(group_members, ", ")): $e"
+        return Dict{String,BootstrapResult}()
     end
 end
 
