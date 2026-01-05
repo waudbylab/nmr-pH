@@ -7,9 +7,9 @@ indicator_props = Dict(
 )
 
 results = run_analysis("../data/group1-rough-h2o.csv";
-    temperature=298.0,
+    temperature=283.0,
     ionic_strength=0.3,
-    pKa_reference=6.7,
+    pKa_reference=6.8,
     indicator_props=indicator_props
 )
 

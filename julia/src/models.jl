@@ -41,12 +41,10 @@ Parameters:
 """
 function henderson_hasselbalch_2pKa(pH, p)
     pKa1, pKa2, δ_0, δ_1, δ_2 = p
-    return @. begin
-        α = 10^(pH - pKa1)
-        β = 10^(2*pH - pKa1 - pKa2)
-        D = 1 + α + β
-        (δ_0 + δ_1 * α + δ_2 * β) / D
-    end
+    α = @. 10^(pH - pKa1)
+    β = @. 10^(2 * pH - pKa1 - pKa2)
+    D = @. 1 + α + β
+    return @. (δ_0 + δ_1 * α + δ_2 * β) / D
 end
 
 """
@@ -55,12 +53,10 @@ Only pKa1 and pKa2 are fitted.
 """
 function hh_2pKa_fixed_limits(pH, p, δ_0, δ_1, δ_2)
     pKa1, pKa2 = p
-    return @. begin
-        α = 10^(pH - pKa1)
-        β = 10^(2*pH - pKa1 - pKa2)
-        D = 1 + α + β
-        (δ_0 + δ_1 * α + δ_2 * β) / D
-    end
+    α = @. 10^(pH - pKa1)
+    β = @. 10^(2 * pH - pKa1 - pKa2)
+    D = @. 1 + α + β
+    return @. (δ_0 + δ_1 * α + δ_2 * β) / D
 end
 
 """
@@ -73,9 +69,9 @@ Returns (f_0, f_1, f_2) where:
 """
 function population_fractions_2pKa(pH, pKa1, pKa2)
     α = 10^(pH - pKa1)
-    β = 10^(2*pH - pKa1 - pKa2)
+    β = 10^(2 * pH - pKa1 - pKa2)
     D = 1 + α + β
-    return (1/D, α/D, β/D)
+    return (1 / D, α / D, β / D)
 end
 
 """
