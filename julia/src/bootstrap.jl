@@ -1,5 +1,22 @@
 # Iterated bootstrap algorithm for pH calibration
 
+# Default measurement uncertainties by nucleus (ppm)
+const DEFAULT_σ_δ = Dict(
+    "H"  => 0.003,   # 1H - high resolution, good shimming
+    "C"  => 0.05,    # 13C - broader lines
+    "N"  => 0.1,     # 15N - broader lines
+    "F"  => 0.03,    # 19F - intermediate
+    "P"  => 0.01     # 31P - intermediate
+)
+
+"""
+Get the measurement uncertainty for a given nucleus.
+Falls back to 0.01 ppm if nucleus not found in dictionary.
+"""
+function get_σ_δ(σ_δ_dict::Dict{String,Float64}, nucleus::String)
+    return get(σ_δ_dict, nucleus, 0.01)
+end
+
 """
     iterated_bootstrap_pH(data, initial_fits; reference_indicator, pKa_reference, ...)
 
@@ -9,7 +26,7 @@ The algorithm:
 1. Start with a reference indicator (e.g., phosphate) with known pKa
 2. Calculate pH values using only the reference
 3. Find the next uncalibrated indicator with pKa closest to the reference
-4. Re-fit that indicator using the current calibrated pH values
+4. Re-fit that indicator using the current calibrated pH values (using only data within pKa_window of the pKa)
 5. Update pH estimates using all calibrated indicators (inverse-variance weighted)
 6. Repeat steps 3-5 until all indicators are calibrated
 
@@ -18,8 +35,10 @@ Arguments:
     initial_fits: Dict from fit_all_indicators
     reference_indicator: name of reference indicator (default "phosphate")
     pKa_reference: literature pKa for reference at this (T, I) condition
-    σ_δ_reference: measurement uncertainty for reference shifts (ppm)
-    σ_δ_other: measurement uncertainty for other indicators (ppm)
+    σ_δ: Dict mapping nucleus names to measurement uncertainties (ppm).
+         Defaults to DEFAULT_σ_δ. Keys should be "H", "C", "N", "F", "P" etc.
+    pKa_window: only use data within ±pKa_window pH units of the pKa for bootstrap
+                corrections (default 1.5). Set to Inf to use all data.
 
 Returns a NamedTuple with:
     - fits: Dict of BootstrapResult for each indicator
@@ -29,8 +48,8 @@ Returns a NamedTuple with:
 function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
     reference_indicator="phosphate",
     pKa_reference,
-    σ_δ_reference=0.01,
-    σ_δ_other=0.005)
+    σ_δ::Dict{String,Float64}=DEFAULT_σ_δ,
+    pKa_window::Float64=1.5)
 
     # Check reference indicator is present
     if !haskey(initial_fits, reference_indicator)
@@ -39,11 +58,14 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
 
     ref_fit = initial_fits[reference_indicator]
     pKa_lit = pKa_reference ± 0.01  # assume small uncertainty on literature value
+    σ_δ_ref = get_σ_δ(σ_δ, ref_fit.nucleus)
 
     println("\n" * "="^70)
     println("ITERATED BOOTSTRAP ANALYSIS")
     println("="^70)
     println("Reference: $reference_indicator with literature pKa = $pKa_lit")
+    println("pKa window: ±$pKa_window pH units")
+    println("Shift uncertainties (σ_δ): ", σ_δ)
 
     # -------------------------------------------------------------------------
     # Initialize pH_data DataFrame with unique pH values
@@ -85,7 +107,7 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
 
         if ref_fit.n_pKa == 1
             pH_est = pH_from_shift(δ_obs, pKa_lit, get_δ_HA(ref_fit), get_δ_A(ref_fit);
-                                   σ_δ=σ_δ_reference)
+                                   σ_δ=σ_δ_ref)
         else
             # For 2-pKa reference indicator, use numerical inversion
             # For now, only support 1-pKa references
@@ -153,9 +175,14 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
         init_fit = initial_fits[best_ind]
         ind_data = filter(row -> row.indicator == best_ind, data)
 
-        # Collect data points with reliable combined pH
+        # Get the initial pKa estimate for filtering by proximity
+        # For 2-pKa indicators, use both pKa values for the window
+        pKa_centers = [Measurements.value(pKa) for pKa in init_fit.pKa]
+
+        # Collect data points with reliable combined pH that are within pKa_window of any pKa
         pH_true_vals = Measurement{Float64}[]
         δ_vals = Float64[]
+        n_outside_window = 0
 
         for row in eachrow(ind_data)
             pH_row_idx = findfirst(r -> r.nominal_pH == row.nominal_pH, eachrow(pH_data))
@@ -170,6 +197,15 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
                 continue
             end
 
+            # Check if pH is within pKa_window of any pKa
+            pH_val = Measurements.value(pH_combined)
+            within_window = any(abs(pH_val - pKa_c) <= pKa_window for pKa_c in pKa_centers)
+
+            if !within_window
+                n_outside_window += 1
+                continue
+            end
+
             push!(pH_true_vals, pH_combined)
             push!(δ_vals, row.delta_obs)
         end
@@ -177,7 +213,7 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
         n_usable = length(pH_true_vals)
 
         if n_usable < 3
-            @warn "Insufficient reliable pH values for $best_ind ($n_usable points), skipping"
+            @warn "Insufficient reliable pH values for $best_ind ($n_usable points within pKa window, $n_outside_window excluded), skipping"
             delete!(uncalibrated, best_ind)
             continue
         end
@@ -199,8 +235,8 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
         delete!(uncalibrated, best_ind)
 
         # Update pH estimates from this indicator
-        σ_δ = init_fit.nucleus == "P" ? σ_δ_reference : σ_δ_other
-        update_indicator_pH!(pH_data, best_ind, ind_data, result, σ_δ)
+        σ_δ_ind = get_σ_δ(σ_δ, init_fit.nucleus)
+        update_indicator_pH!(pH_data, best_ind, ind_data, result, σ_δ_ind)
 
         # Update combined pH
         update_combined_pH!(pH_data, bootstrap_fits, calibrated)
@@ -212,7 +248,8 @@ function iterated_bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
             @sprintf("%.3f, %.3f", Measurements.value(result.pKa_bootstrap[1]),
                                    Measurements.value(result.pKa_bootstrap[2]))
 
-        println("Tier $tier: $best_ind (pKa = $pKa_str, $n_usable pts) → $n_reliable reliable pH values")
+        window_note = n_outside_window > 0 ? ", $n_outside_window pts outside pKa window" : ""
+        println("Tier $tier: $best_ind (pKa = $pKa_str, $n_usable pts$window_note) → $n_reliable reliable pH values")
 
         tier += 1
     end
@@ -455,11 +492,13 @@ end
 Single-pass bootstrap (legacy function). Use `iterated_bootstrap_pH` for improved calibration.
 """
 function bootstrap_pH(data, initial_fits::Dict{String,IndicatorFit};
-    pKa_phosphate_lit, σ_δ_phosphate=0.01, σ_δ_other=0.005)
+    pKa_phosphate_lit,
+    σ_δ::Dict{String,Float64}=DEFAULT_σ_δ,
+    pKa_window::Float64=1.5)
 
     return iterated_bootstrap_pH(data, initial_fits;
         reference_indicator="phosphate",
         pKa_reference=pKa_phosphate_lit,
-        σ_δ_reference=σ_δ_phosphate,
-        σ_δ_other=σ_δ_other)
+        σ_δ=σ_δ,
+        pKa_window=pKa_window)
 end
