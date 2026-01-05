@@ -92,13 +92,8 @@ function pH_from_shift(δ_obs, pKa, δ_HA, δ_A; σ_δ=0.01)
     δ_HA_val = Measurements.value(δ_HA)
     δ_A_val = Measurements.value(δ_A)
 
-    # Check if δ_obs is between the limits (with 10% extrapolation tolerance)
-    # This allows for small measurement errors and model imperfections at extreme pH
-    δ_range = abs(δ_A_val - δ_HA_val)
-    δ_min_strict, δ_max_strict = minmax(δ_HA_val, δ_A_val)
-    δ_min = δ_min_strict - 0.10 * δ_range
-    δ_max = δ_max_strict + 0.10 * δ_range
-
+    # Check if δ_obs is between the limits
+    δ_min, δ_max = minmax(δ_HA_val, δ_A_val)
     if δ_obs_val <= δ_min || δ_obs_val >= δ_max
         return missing
     end
@@ -129,13 +124,9 @@ function pH_from_shift_2pKa(δ_obs, pKa1, pKa2, δ_0, δ_1, δ_2; σ_δ=0.01, pH
     δ_1_val = Measurements.value(δ_1)
     δ_2_val = Measurements.value(δ_2)
 
-    # Check if δ_obs is within the limiting shifts (with 10% extrapolation tolerance)
+    # Check if δ_obs is within the limiting shifts
     δ_limits = [δ_0_val, δ_1_val, δ_2_val]
-    δ_min_strict, δ_max_strict = extrema(δ_limits)
-    δ_range = δ_max_strict - δ_min_strict
-    δ_min = δ_min_strict - 0.10 * δ_range
-    δ_max = δ_max_strict + 0.10 * δ_range
-
+    δ_min, δ_max = extrema(δ_limits)
     if δ_obs_val <= δ_min || δ_obs_val >= δ_max
         return missing
     end
