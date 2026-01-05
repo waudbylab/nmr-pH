@@ -90,87 +90,110 @@ function print_bootstrap_table(bootstrap_result)
 end
 
 """
-    plot_initial_fits(data, results; save_path=nothing) -> Plot
+    plot_initial_fits(data, results; save_path=nothing)
 
-Create a multi-panel plot showing all indicator fits.
+Create multi-panel plots showing all indicator fits, organized by nucleus.
+Saves separate files for each nucleus.
 """
 function plot_initial_fits(data, results::Dict{String,IndicatorFit}; save_path=nothing)
-    indicators = sort(collect(keys(results)))
-    n_ind = length(indicators)
+    # Group indicators by nucleus
+    by_nucleus = Dict{String,Vector{String}}()
+    for (ind, fit) in results
+        nuc = fit.nucleus
+        if !haskey(by_nucleus, nuc)
+            by_nucleus[nuc] = String[]
+        end
+        push!(by_nucleus[nuc], ind)
+    end
 
-    # Determine grid layout
-    n_cols = min(3, n_ind)
-    n_rows = ceil(Int, n_ind / n_cols)
+    # Sort indicators within each nucleus group
+    for nuc in keys(by_nucleus)
+        sort!(by_nucleus[nuc])
+    end
 
-    plots = []
+    # Create plots for each nucleus
+    for (nuc, indicators) in sort(by_nucleus)
+        n_ind = length(indicators)
+        n_cols = min(4, n_ind)
+        n_rows = ceil(Int, n_ind / n_cols)
 
-    for ind in indicators
-        r = results[ind]
-        subset = filter(row -> row.indicator == ind, data)
+        plots = []
 
-        pH_data = Float64.(subset.nominal_pH)
-        δ_data = Float64.(subset.delta_obs)
+        for ind in indicators
+            r = results[ind]
+            subset = filter(row -> row.indicator == ind, data)
 
-        # Generate smooth curve
-        pH_curve = range(minimum(pH_data) - 0.3, maximum(pH_data) + 0.3, length=100)
+            pH_data = Float64.(subset.nominal_pH)
+            δ_data = Float64.(subset.delta_obs)
 
-        if r.n_pKa == 1
-            params = [Measurements.value(r.pKa[1]),
-                Measurements.value(r.δ_limits[1]),
-                Measurements.value(r.δ_limits[2])]
-            δ_curve = henderson_hasselbalch(collect(pH_curve), params)
-            pKa_label = "pKa=$(round(Measurements.value(r.pKa[1]), digits=2))"
-        else
-            params = [Measurements.value(r.pKa[1]),
-                Measurements.value(r.pKa[2]),
-                Measurements.value(r.δ_limits[1]),
-                Measurements.value(r.δ_limits[2]),
-                Measurements.value(r.δ_limits[3])]
-            δ_curve = henderson_hasselbalch_2pKa(collect(pH_curve), params)
-            pKa_label = "pKa=$(round(Measurements.value(r.pKa[1]), digits=2)), $(round(Measurements.value(r.pKa[2]), digits=2))"
+            # Generate smooth curve
+            pH_curve = range(minimum(pH_data) - 0.3, maximum(pH_data) + 0.3, length=100)
+
+            if r.n_pKa == 1
+                params = [Measurements.value(r.pKa[1]),
+                    Measurements.value(r.δ_limits[1]),
+                    Measurements.value(r.δ_limits[2])]
+                δ_curve = henderson_hasselbalch(collect(pH_curve), params)
+                pKa_label = @sprintf("%.2f", Measurements.value(r.pKa[1]))
+            else
+                params = [Measurements.value(r.pKa[1]),
+                    Measurements.value(r.pKa[2]),
+                    Measurements.value(r.δ_limits[1]),
+                    Measurements.value(r.δ_limits[2]),
+                    Measurements.value(r.δ_limits[3])]
+                δ_curve = henderson_hasselbalch_2pKa(collect(pH_curve), params)
+                pKa_label = @sprintf("%.2f, %.2f",
+                    Measurements.value(r.pKa[1]),
+                    Measurements.value(r.pKa[2]))
+            end
+
+            p = plot(pH_curve, δ_curve,
+                label="",
+                linewidth=2, color=:blue,
+                legend=false)
+            scatter!(p, pH_data, δ_data,
+                label="", markersize=4, markerstrokewidth=0, color=:red,
+                markeralpha=0.6)
+
+            xlabel!(p, "pH")
+            ylabel!(p, "δ (ppm)")
+            title!(p, "$(ind)\npKa = $pKa_label", titlefontsize=10)
+
+            push!(plots, p)
         end
 
-        p = plot(pH_curve, δ_curve,
-            label="Fit ($pKa_label)",
-            linewidth=2, color=:blue)
-        scatter!(p, pH_data, δ_data,
-            label="Data", markersize=5, markerstrokewidth=0, color=:red)
+        # Combine into single figure
+        fig = plot(plots...,
+            layout=(n_rows, n_cols),
+            size=(300 * n_cols, 250 * n_rows),
+            margin=4Plots.mm,
+            plot_title="Initial Fits: $(nuc) nucleus (electrode pH)",
+            plot_titlefontsize=14)
 
-        xlabel!(p, "pH (electrode)")
-        ylabel!(p, "δ (ppm)")
-        title!(p, "$(r.indicator) ($(r.nucleus))")
-
-        push!(plots, p)
+        if !isnothing(save_path)
+            # Create separate file for each nucleus
+            base_path = splitext(save_path)[1]
+            nuc_path = "$(base_path)_$(nuc).png"
+            savefig(fig, nuc_path)
+            println("Saved $(nuc) nucleus plots to $nuc_path")
+        end
     end
-
-    # Combine into single figure
-    fig = plot(plots..., layout=(n_rows, n_cols), size=(400 * n_cols, 350 * n_rows),
-        margin=5Plots.mm, legend=:best)
-
-    if !isnothing(save_path)
-        savefig(fig, save_path)
-        println("Saved plot to $save_path")
-    end
-
-    return fig
 end
 
 """
-    plot_bootstrap_results(data, bootstrap_result; save_path=nothing) -> Plot
+    plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
 
 Create diagnostic plots for bootstrap analysis.
-
-Returns a combined figure with:
-1. pH comparison: nominal vs bootstrap
-2. Multi-panel fits using bootstrap pH
-3. Residuals
+Saves separate files for:
+1. pH corrections (comparison + residuals)
+2. Bootstrap fits by nucleus
 """
 function plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
     fits = bootstrap_result.fits
     pH_data = bootstrap_result.pH_data
 
     # -------------------------------------------------------------------------
-    # Plot 1: pH comparison (nominal vs bootstrap)
+    # Plot 1: pH comparison and corrections
     # -------------------------------------------------------------------------
 
     # Extract data for plotting
@@ -186,32 +209,55 @@ function plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
         end
     end
 
-    p_compare = scatter(pH_nom, pH_boot .± pH_err,
-        xlabel="pH (electrode)", ylabel="pH (bootstrap)",
-        label="Data", markersize=3, markerstrokewidth=0.5,
-        title="pH Comparison")
+    # Comparison plot
+    p_compare = scatter(pH_nom, pH_boot,
+        xlabel="Electrode pH", ylabel="Corrected pH",
+        label="", markersize=5, markerstrokewidth=0,
+        color=:blue, markeralpha=0.6,
+        title="pH Calibration")
+
+    # Add error bars
+    for i in 1:length(pH_nom)
+        plot!(p_compare, [pH_nom[i], pH_nom[i]],
+              [pH_boot[i] - pH_err[i], pH_boot[i] + pH_err[i]],
+              color=:blue, alpha=0.3, label="")
+    end
 
     # Add 1:1 line
     pH_range = [minimum(pH_nom) - 0.5, maximum(pH_nom) + 0.5]
-    plot!(p_compare, pH_range, pH_range, label="1:1", linestyle=:dash, color=:gray)
+    plot!(p_compare, pH_range, pH_range, label="1:1",
+          linestyle=:dash, color=:gray, linewidth=2)
 
-    # -------------------------------------------------------------------------
-    # Plot 2: Residuals (bootstrap pH - nominal pH)
-    # -------------------------------------------------------------------------
-
+    # Residuals plot
     residuals = pH_boot .- pH_nom
 
     p_resid = scatter(pH_nom, residuals,
-        xlabel="pH (nominal)", ylabel="pH(boot) - pH(nom)",
-        label=nothing, markersize=6, markerstrokewidth=0,
-        title="pH Residuals")
-    hline!(p_resid, [0], linestyle=:dash, color=:gray, label=nothing)
+        xlabel="Electrode pH", ylabel="ΔpH (corrected - electrode)",
+        label="", markersize=5, markerstrokewidth=0,
+        color=:red, markeralpha=0.6,
+        title="pH Correction")
+    hline!(p_resid, [0], linestyle=:dash, color=:gray, linewidth=2, label="")
 
     # Add ±0.1 reference lines
-    hline!(p_resid, [-0.1, 0.1], linestyle=:dot, color=:lightgray, label=nothing)
+    hline!(p_resid, [-0.1, 0.1], linestyle=:dot, color=:lightgray, linewidth=1.5, label="")
+
+    # Combine pH correction plots
+    fig_pH = plot(p_compare, p_resid,
+        layout=(1, 2),
+        size=(900, 400),
+        margin=5Plots.mm,
+        plot_title="Bootstrap pH Correction",
+        plot_titlefontsize=14)
+
+    if !isnothing(save_path)
+        base_path = splitext(save_path)[1]
+        pH_path = "$(base_path)_pH_correction.png"
+        savefig(fig_pH, pH_path)
+        println("Saved pH correction plot to $pH_path")
+    end
 
     # -------------------------------------------------------------------------
-    # Plot 3: Individual indicator fits using bootstrap pH
+    # Plot 2: Individual indicator fits by nucleus
     # -------------------------------------------------------------------------
 
     # Use calibration order if available
@@ -219,87 +265,97 @@ function plot_bootstrap_results(data, bootstrap_result; save_path=nothing)
                  bootstrap_result.calibration_order :
                  sort(collect(keys(fits)))
 
-    n_ind = length(indicators)
-    n_cols = min(3, n_ind)
-    n_rows = ceil(Int, n_ind / n_cols)
-
-    ind_plots = []
-
+    # Group by nucleus
+    by_nucleus = Dict{String,Vector{String}}()
     for ind in indicators
-        br = fits[ind]
-        ind_data_raw = filter(row -> row.indicator == ind, data)
+        nuc = fits[ind].nucleus
+        if !haskey(by_nucleus, nuc)
+            by_nucleus[nuc] = String[]
+        end
+        push!(by_nucleus[nuc], ind)
+    end
 
-        # Get bootstrap pH values and uncertainties for this indicator's data points
-        pH_boot_vals = Float64[]
-        pH_boot_errs = Float64[]
-        δ_vals = Float64[]
+    # Create plots for each nucleus
+    for (nuc, nuc_indicators) in sort(by_nucleus)
+        n_ind = length(nuc_indicators)
+        n_cols = min(4, n_ind)
+        n_rows = ceil(Int, n_ind / n_cols)
 
-        for row in eachrow(ind_data_raw)
-            pH_row = filter(r -> r.nominal_pH == row.nominal_pH, pH_data)
-            if nrow(pH_row) > 0 && !ismissing(pH_row.pH_combined[1])
-                push!(pH_boot_vals, Measurements.value(pH_row.pH_combined[1]))
-                push!(pH_boot_errs, Measurements.uncertainty(pH_row.pH_combined[1]))
-                push!(δ_vals, row.delta_obs)
+        ind_plots = []
+
+        for ind in nuc_indicators
+            br = fits[ind]
+            ind_data_raw = filter(row -> row.indicator == ind, data)
+
+            # Get bootstrap pH values and uncertainties
+            pH_boot_vals = Float64[]
+            pH_boot_errs = Float64[]
+            δ_vals = Float64[]
+
+            for row in eachrow(ind_data_raw)
+                pH_row = filter(r -> r.nominal_pH == row.nominal_pH, pH_data)
+                if nrow(pH_row) > 0 && !ismissing(pH_row.pH_combined[1])
+                    push!(pH_boot_vals, Measurements.value(pH_row.pH_combined[1]))
+                    push!(pH_boot_errs, Measurements.uncertainty(pH_row.pH_combined[1]))
+                    push!(δ_vals, row.delta_obs)
+                end
             end
+
+            if length(pH_boot_vals) < 2
+                continue
+            end
+
+            # Generate smooth curve
+            pH_curve = range(minimum(pH_boot_vals) - 0.3, maximum(pH_boot_vals) + 0.3, length=100)
+
+            if br.n_pKa == 1
+                params = [Measurements.value(br.pKa_bootstrap[1]),
+                    Measurements.value(br.δ_limits[1]),
+                    Measurements.value(br.δ_limits[2])]
+                δ_curve = henderson_hasselbalch(collect(pH_curve), params)
+                pKa_label = @sprintf("%.2f", Measurements.value(br.pKa_bootstrap[1]))
+            else
+                params = [Measurements.value(br.pKa_bootstrap[1]),
+                    Measurements.value(br.pKa_bootstrap[2]),
+                    Measurements.value(br.δ_limits[1]),
+                    Measurements.value(br.δ_limits[2]),
+                    Measurements.value(br.δ_limits[3])]
+                δ_curve = henderson_hasselbalch_2pKa(collect(pH_curve), params)
+                pKa_label = @sprintf("%.2f, %.2f",
+                    Measurements.value(br.pKa_bootstrap[1]),
+                    Measurements.value(br.pKa_bootstrap[2]))
+            end
+
+            p = plot(pH_curve, δ_curve,
+                label="",
+                linewidth=2, color=:blue,
+                legend=false)
+            scatter!(p, pH_boot_vals, δ_vals,
+                label="", markersize=4, markerstrokewidth=0,
+                color=:red, markeralpha=0.6)
+
+            xlabel!(p, "pH")
+            ylabel!(p, "δ (ppm)")
+
+            tier_str = br.is_reference ? "REF" : "T$(br.calibration_tier)"
+            title!(p, "$(ind) [$tier_str]\npKa = $pKa_label", titlefontsize=10)
+
+            push!(ind_plots, p)
         end
 
-        if length(pH_boot_vals) < 2
-            continue
+        # Combine into single figure for this nucleus
+        fig_nuc = plot(ind_plots...,
+            layout=(n_rows, n_cols),
+            size=(300 * n_cols, 250 * n_rows),
+            margin=4Plots.mm,
+            plot_title="Bootstrap Fits: $(nuc) nucleus (corrected pH)",
+            plot_titlefontsize=14)
+
+        if !isnothing(save_path)
+            base_path = splitext(save_path)[1]
+            nuc_path = "$(base_path)_fits_$(nuc).png"
+            savefig(fig_nuc, nuc_path)
+            println("Saved $(nuc) nucleus bootstrap fits to $nuc_path")
         end
-
-        # Generate smooth curve
-        pH_curve = range(minimum(pH_boot_vals) - 0.3, maximum(pH_boot_vals) + 0.3, length=100)
-
-        if br.n_pKa == 1
-            params = [Measurements.value(br.pKa_bootstrap[1]),
-                Measurements.value(br.δ_limits[1]),
-                Measurements.value(br.δ_limits[2])]
-            δ_curve = henderson_hasselbalch(collect(pH_curve), params)
-            pKa_label = "pKa=$(round(Measurements.value(br.pKa_bootstrap[1]), digits=2))"
-        else
-            params = [Measurements.value(br.pKa_bootstrap[1]),
-                Measurements.value(br.pKa_bootstrap[2]),
-                Measurements.value(br.δ_limits[1]),
-                Measurements.value(br.δ_limits[2]),
-                Measurements.value(br.δ_limits[3])]
-            δ_curve = henderson_hasselbalch_2pKa(collect(pH_curve), params)
-            pKa_label = "pKa=$(round(Measurements.value(br.pKa_bootstrap[1]), digits=2)), $(round(Measurements.value(br.pKa_bootstrap[2]), digits=2))"
-        end
-
-        p = plot(pH_curve, δ_curve,
-            label=pKa_label,
-            linewidth=2, color=:blue)
-        scatter!(p, pH_boot_vals .± pH_boot_errs, δ_vals,
-            label="Data", markersize=3, markerstrokewidth=0.5, color=:red)
-
-        xlabel!(p, "pH (bootstrap)")
-        ylabel!(p, "δ (ppm)")
-
-        tier_str = br.is_reference ? "REF" : "T$(br.calibration_tier)"
-        title!(p, "$(br.indicator) [$tier_str]")
-
-        push!(ind_plots, p)
     end
-
-    # -------------------------------------------------------------------------
-    # Combine all plots
-    # -------------------------------------------------------------------------
-
-    # Top row: comparison and residuals
-    p_top = plot(p_compare, p_resid, layout=(1, 2), size=(800, 350))
-
-    # Bottom: indicator fits
-    p_bottom = plot(ind_plots..., layout=(n_rows, n_cols),
-        size=(400 * n_cols, 300 * n_rows))
-
-    # Final combined figure
-    fig = plot(p_top, p_bottom, layout=@layout([a{0.35h}; b]),
-        size=(max(800, 400 * n_cols), 350 + 300 * n_rows))
-
-    if !isnothing(save_path)
-        savefig(fig, save_path)
-        println("\nSaved plot to $save_path")
-    end
-
-    return fig
 end
