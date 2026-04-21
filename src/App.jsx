@@ -376,7 +376,7 @@ function AppContent() {
         <a href="./">Home</a>
         <a href="./docs/">Docs</a>
         <a href="./docs/buffers.html">Buffers</a>
-        <a href="https://github.com/waudbygroup/nmr-pH">GitHub</a>
+        <a href="https://github.com/waudbylab/nmr-pH">GitHub</a>
       </nav>
 
       <header className="app-header">

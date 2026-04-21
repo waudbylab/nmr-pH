@@ -187,7 +187,7 @@ export function DatabaseLoader({ children, databaseUrl = DEFAULT_DATABASE_URL })
         <p>{error}</p>
         <p>
           Please check your internet connection or{' '}
-          <a href="https://github.com/waudbygroup/nmr-pH/issues" target="_blank" rel="noopener noreferrer">
+          <a href="https://github.com/waudbylab/nmr-pH/issues" target="_blank" rel="noopener noreferrer">
             report an issue
           </a>.
         </p>
